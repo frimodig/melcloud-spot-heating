@@ -137,7 +137,8 @@ remove the controller entirely, delete its cron line.
 
 ## How a change reaches the units
 
-A button or command writes its file and starts a run. A run takes an exclusive lock, so two runs
+A button writes its file and starts a run. A command (`--control`) only writes the file, and the next
+cron run applies it. A run takes an exclusive lock, so two runs
 never write to the units at once: cron skips its run while another is going, and a run started from
 the page waits up to 3 minutes (`--lock-wait 180`). A run that waited but wrote nothing (the lock
 stayed taken, the controller is paused, or the circuit breaker is open after repeated failures) exits with code 75, which is how the
