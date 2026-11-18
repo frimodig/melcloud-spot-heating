@@ -1,0 +1,5 @@
+# Tested with these; the upper bounds keep a new major version out until it has been tried.
+aiohttp>=3.14,<4
+pymelcloud>=2.11,<3
+tomli; python_version < "3.11"
+tzdata  # time zone database, for hosts without one; always the newest

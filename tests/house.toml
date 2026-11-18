@@ -1,0 +1,33 @@
+# The test house: the settings the tests run on, over the defaults in config.toml (as an install's
+# config.local.toml). Two indoor units on one outdoor unit; every rule switched on.
+
+[baseline]
+label = "a constant +22 C"
+weekday = [["00:00", 22.0]]
+weekend = [["00:00", 22.0]]
+
+[schedule]
+weekday = [["00:00", 19.0], ["05:00", 22.0], ["08:00", 19.0], ["14:30", 20.0], ["17:30", 22.0], ["22:00", 21.0]]
+weekend = [["00:00", 19.0], ["06:00", 22.0], ["22:00", 21.0]]
+
+[above_average]
+keep_weekday = [{from = "14:30", to = "17:30", units = ["Unit B"], comfort = true},
+                {from = "22:00", to = "24:00", comfort = true}]
+keep_weekend = [{from = "07:00", to = "24:00", comfort = true}]
+
+[night_shift]
+enabled = true
+units = ["Unit A"]
+
+[nobody_home]
+weekday = ["08:00", "15:00"]
+
+[units]
+outdoor_groups = [["Unit A", "Unit B"]]
+
+[units.cool_offsets]
+"Unit B" = -0.5
+
+[units.solar_weight]
+"Unit B" = 1.0
+"Unit A" = 0.5

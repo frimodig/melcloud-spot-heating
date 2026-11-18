@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="{{lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="{{app_short}}">
+<meta name="theme-color" id="theme" content="#f3f1ee">
+<link rel="manifest" href="/manifest.json">
+<title>{{app_name}}</title>
+<style>
+  :root {
+    --bg: #f3f1ee;  --surface: #ffffff;  --ink: #1c1b1f;  --muted: #6b6872;
+    --line: rgba(0,0,0,.08);  --tonal: #ebe8e4;  --shadow: 0 1px 2px rgba(0,0,0,.05), 0 6px 18px rgba(0,0,0,.05);
+    --heat: #e2523b;  --cool: #2f7fd6;  --off: #8c8a93;
+    --frame: var(--heat);
+    --price-fill: rgba(110,108,120,.22);
+    --band-pre: rgba(235,140,20,.28);  --band-save: rgba(47,127,214,.22);
+    --ok: #2e9e5b;  --warn: #d98a0b;  --bad: #d33f3f;  --out: #4f86b5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121214;  --surface: #1e1e22;  --ink: #f3f2f5;  --muted: #9d9ba6;
+      --line: rgba(255,255,255,.09);  --tonal: #2a2a30;  --shadow: 0 1px 2px rgba(0,0,0,.4);
+      --heat: #f0674f;  --cool: #4a97ec;  --off: #7d7b85;
+      --price-fill: rgba(170,168,185,.24);
+      --band-pre: rgba(245,160,40,.30);  --band-save: rgba(74,151,236,.28);  --out: #7fb1dc;
+    }
+  }
+  body[data-mode="cool"]   { --frame: var(--cool); }
+  body[data-mode="paused"] { --frame: var(--off); }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; min-width: 0; }
+  html { overflow-x: hidden; }
+  body {
+    overflow-x: hidden; overflow-wrap: anywhere;
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink);
+    font: 17px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", sans-serif;
+    padding: calc(env(safe-area-inset-top) + 26px) 26px calc(env(safe-area-inset-bottom) + 30px);
+  }
+  /* the state frame: a rounded border around the whole screen, warm red or cool blue */
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 20; pointer-events: none;
+    border: 7px solid var(--frame); border-radius: 30px; transition: border-color .5s;
+  }
+  main { max-width: 520px; width: 100%; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px; }
+  .mode { display: inline-flex; align-items: center; gap: 9px; font-size: 1.35rem; font-weight: 700; letter-spacing: -.01em; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--frame); transition: background .5s; box-shadow: 0 0 0 4px color-mix(in srgb, var(--frame) 22%, transparent); }
+  .greet { color: var(--muted); font-size: .95rem; display: flex; align-items: center; gap: 10px; }
+  .langbtn { font: inherit; font-size: .8rem; color: var(--muted); background: none; border: 1px solid currentColor; border-radius: 999px; padding: 2px 10px; cursor: pointer; opacity: .8; }
+
+  .card { background: var(--surface); border-radius: 24px; padding: 18px; box-shadow: var(--shadow); }
+  .label { color: var(--muted); font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+
+  .hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: end; }
+  .price { font-size: 3.3rem; font-weight: 750; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+  .price small { font-size: 1rem; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 2px; }
+  .target { text-align: right; }
+  .cheap3 { margin-top: 10px; font-weight: 600; } .cheap3:empty { display: none; }
+  .avg { color: var(--muted); font-size: .9rem; margin-top: 6px; } .avg b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .sym { font-size: 1.15rem; vertical-align: -2px; }
+  .out { color: var(--muted); font-size: .9rem; margin-top: 6px; } .out b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .pill { display: inline-block; padding: 3px 11px; border-radius: 999px; font-size: .8rem; font-weight: 700; color: #fff; background: var(--off); vertical-align: 3px; }
+  .pill.cheap { background: var(--ok); } .pill.expensive { background: var(--warn); }
+  .pill.extreme, .pill.peak { background: var(--bad); } .pill.spike, .pill.dear_quarter, .pill.above_average { background: var(--warn); }
+  .why { grid-column: 1 / -1; margin-top: 10px; font-weight: 600; }
+  .chip { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: .78rem; font-weight: 700;
+    background: color-mix(in srgb, var(--frame) 16%, transparent); color: var(--ink); border: 1.5px solid var(--frame); vertical-align: 3px; }
+  .chip.warm { border-color: var(--heat); background: color-mix(in srgb, var(--heat) 16%, transparent); }
+  .chip.cool { border-color: var(--cool); background: color-mix(in srgb, var(--cool) 16%, transparent); }
+  .chip.good { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, transparent); }
+  .cheap3 .chip { margin-left: 2px; }
+  .target .chip { margin-right: 6px; }
+  .ov + .ov { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+  .ov-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; }
+  .ov-what { font-weight: 600; }
+  .ov-time, .ov-est { color: var(--muted); font-size: .9rem; margin-top: 4px; }
+  .ov-time b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .ov-btns { display: flex; gap: 10px; margin-top: 10px; }
+  .ov-btns button { font: inherit; font-weight: 650; min-height: 44px; flex: 1; border-radius: 14px; border: 0; cursor: pointer;
+    background: var(--tonal); color: var(--ink); }
+  .ov-btns button.stop { background: var(--ink); color: var(--surface); }
+  .notes { grid-column: 1 / -1; color: var(--muted); font-size: .88rem; }
+
+  .seg { display: inline-flex; background: var(--tonal); border-radius: 12px; padding: 3px; }
+  .seg button { all: unset; cursor: pointer; padding: 6px 16px; border-radius: 9px; font-weight: 600; font-size: .92rem; color: var(--muted); }
+  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+  .chart-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 10px; margin-bottom: 4px; }
+  .day { color: var(--muted); font-size: .9rem; }
+  svg { width: 100%; max-width: 100%; height: auto; display: block; }
+  svg text { fill: var(--muted); font-size: 10px; }
+  .c-price { fill: var(--price-fill); }
+  .c-line { fill: none; stroke: var(--frame); stroke-width: 2.6; stroke-linejoin: round; transition: stroke .5s; }
+  .c-pre { fill: var(--band-pre); } .c-save { fill: var(--band-save); }
+  .c-grid { stroke: var(--line); }
+  .c-room { fill: none; stroke: var(--ink); stroke-width: 1.8; stroke-dasharray: 4 3; stroke-linejoin: round; stroke-linecap: round; }
+  .c-now { stroke: var(--ink); stroke-width: 2; }
+  .c-out { fill: none; stroke: var(--out); stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+  .c-outdot { fill: var(--surface); stroke: var(--out); stroke-width: 2.2; }
+  .c-outbase { stroke: var(--line); }
+  svg text.c-wx { font-size: 14px; fill: var(--ink); }
+  .c-nowdot { fill: var(--surface); stroke: var(--ink); stroke-width: 2.4; }
+  .c-nowtag { fill: var(--ink); } svg text.c-nowtext { fill: var(--surface); font-weight: 700; font-size: 9px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: .78rem; color: var(--muted); margin-top: 6px; }
+  .sw { display: inline-block; width: 11px; height: 11px; border-radius: 4px; margin-right: 5px; vertical-align: -1px; }
+  .sw.price { background: var(--price-fill); } .sw.line { height: 3px; background: var(--frame); vertical-align: 3px; border-radius: 2px; }
+  .sw.pre { background: var(--band-pre); } .sw.save { background: var(--band-save); }
+  .sw.room { height: 0; border-top: 2px dashed var(--ink); border-radius: 0; vertical-align: 4px; }
+  .sw.out { height: 3px; background: var(--out); vertical-align: 3px; border-radius: 2px; }
+  .blocks { margin-top: 8px; font-size: .92rem; } .blocks div { padding: 1px 0; }
+  .note { color: var(--muted); font-size: .88rem; margin-top: 6px; }
+
+  .units { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .unit { background: var(--surface); border-radius: 22px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .unit .name { color: var(--muted); font-size: .85rem; font-weight: 600; }
+  .unit .room { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .unit .room small { font-size: .9rem; color: var(--muted); font-weight: 500; }
+  .unit .tgt { color: var(--muted); font-size: .9rem; }
+  .unit .guard { color: var(--warn); font-size: .78rem; margin-top: 2px; }
+
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  button.act {
+    font: inherit; font-weight: 650; min-height: 62px; border-radius: 20px; border: 0; padding: 10px 12px; cursor: pointer;
+    background: var(--tonal); color: var(--ink); text-align: center; transition: transform .08s;
+  }
+  button.act:active { transform: scale(.97); }
+  button.act small { display: block; overflow-wrap: anywhere; line-height: 1.25; font-weight: 500; opacity: .7; font-size: .76rem; margin-top: 1px; }
+  button.warm { background: var(--heat); color: #fff; } button.coolb { background: var(--cool); color: #fff; }
+  button.wide { grid-column: 1 / -1; }
+  button.ghost { background: transparent; border: 2px solid var(--frame); color: var(--ink); }
+  .msg { min-height: 1.4em; margin: 0 4px; font-weight: 600; font-size: .95rem; }
+
+  dialog { border: 0; border-radius: 28px; padding: 22px; width: min(92vw, 440px); background: var(--surface); color: var(--ink); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+  dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(5px); }
+  dialog h2 { margin: 0 0 6px; font-size: 1.25rem; letter-spacing: -.01em; }
+  dialog p { margin: 6px 0 14px; color: var(--muted); }
+  dialog .stack { display: grid; gap: 10px; }
+  dialog button { font: inherit; font-weight: 650; min-height: 52px; border-radius: 16px; border: 0; background: var(--ink); color: var(--surface); cursor: pointer; padding: 8px 12px; }
+  dialog button.tonal { background: var(--tonal); color: var(--ink); }
+  dialog button.danger { background: var(--bad); color: #fff; }
+  input[type=datetime-local] { font: inherit; padding: 13px; width: 100%; border-radius: 14px; border: 2px solid var(--line); background: var(--bg); color: var(--ink); }
+  label { font-size: .88rem; color: var(--muted); }
+  [hidden] { display: none !important; }
+
+  /* Portrait tablets: one column, wider, the buttons three to a row. */
+  @media (min-width: 600px) {
+    main { max-width: 760px; }
+    .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .units { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  }
+  /* Desktops and landscape tablets: the price, units and controls in a column on the left, the chart
+     beside them, large and kept in view while the left column scrolls. */
+  @media (min-width: 900px) {
+    main { max-width: 1280px; align-items: start;
+      grid-template-columns: minmax(340px, 440px) minmax(0, 1fr);
+      grid-template-areas: "head head" "price chart" "units chart" "ov chart" "controls chart" "msg chart"; }
+    main > header { grid-area: head; }
+    #priceCard { grid-area: price; } #units { grid-area: units; } #ovCard { grid-area: ov; }
+    #controls { grid-area: controls; grid-template-columns: repeat(2, minmax(0, 1fr)); } #msg { grid-area: msg; }
+    #chartCard { grid-area: chart; position: sticky; top: 26px; }
+  }
+</style>
+</head>
+<body data-mode="heat">
+<main>
+  <header>
+    <div class="mode"><span class="dot"></span><span id="title">{{app_name}}</span></div>
+    <div class="greet"><span id="sub"></span>
+      <button class="langbtn" id="lang" data-lang="{{other_lang}}" lang="{{other_lang}}" aria-label="{{language_label}}">{{other_language}}</button></div>
+  </header>
+
+  <section class="card" id="priceCard">
+    <div class="label">{{price_now}}</div>
+    <div class="hero">
+      <div><div class="price"><span id="priceNow">–</span><small>c/kWh</small></div>
+        <div class="avg" id="avgNow"></div></div>
+      <div class="target"><span class="chip" id="userChip" hidden>{{manual_chip}}</span><span class="pill" id="pill"></span><div class="out">{{outside}} <span id="outSym" class="sym"></span> <b id="outNow">–</b></div></div>
+      <div class="why" id="whyText"></div>
+      <div class="notes" id="whyNotes"></div>
+    </div>
+  </section>
+
+  <section class="units" id="units"></section>
+
+  <section class="card" id="ovCard" hidden>
+    <div class="label">{{overrides_title}}</div>
+    <div id="ovList"></div>
+  </section>
+
+  <section class="grid" id="controls">
+    <button class="act warm" id="cold">{{too_cold}}<small>{{too_cold_sub}}</small></button>
+    <button class="act coolb" id="hot">{{too_hot}}<small>{{too_hot_sub}}</small></button>
+    <button class="act" id="away">{{away}}<small id="awayState"></small></button>
+    <button class="act" id="home">{{home}}<small id="homeState"></small></button>
+    <button class="act" id="season">{{season}}<small id="seasonState"></small></button>
+    <button class="act" id="pause">{{control}}<small id="pauseState"></small></button>
+    <button class="act wide ghost" id="normal">{{normal_now}}<small id="normalState"></small></button>
+  </section>
+  <p class="msg" id="msg" role="status"></p>
+
+  <section class="card" id="chartCard">
+    <div class="chart-head">
+      <div><div class="label">{{chart_title}}</div><div class="day" id="dayLabel"></div></div>
+      <div class="seg" role="group" aria-label="{{day}}" id="seg" hidden>
+        <button id="tabToday" aria-pressed="true">{{today}}</button>
+        <button id="tabTomorrow" aria-pressed="false">{{tomorrow}}</button>
+      </div>
+    </div>
+    <svg id="chart" viewBox="0 0 480 215" role="img" aria-label="{{chart_title}}"></svg>
+    <div class="legend">
+      <span><i class="sw price"></i>{{legend_price}}</span><span><i class="sw line"></i>{{legend_target}}</span><span><i class="sw room"></i>{{legend_measured}}</span>
+      <span><i class="sw pre"></i><span id="preName">{{pre_heat}}</span></span><span><i class="sw save"></i>{{legend_saving}}</span>
+      <span><i class="sw out"></i>{{legend_outdoor}}</span>
+    </div>
+    <div class="cheap3" id="cheap3"></div>
+    <div class="blocks" id="blocks"></div>
+    <div class="note" id="chartNote"></div>
+  </section>
+</main>
+
+<dialog id="dAway"><h2>{{away}}</h2>
+  <p>{{away_text}}</p>
+  <div class="stack">
+    <label for="awayUntil">{{return_time}}</label><input type="datetime-local" id="awayUntil">
+    <button data-go="away" data-v="until">{{set_return_time}}</button>
+    <button data-go="away" data-v="on">{{away_no_time}}</button>
+    <button data-go="away" data-v="off" class="tonal" id="awayOff">{{end_away}}</button>
+    <button class="tonal" data-close>{{cancel}}</button>
+  </div></dialog>
+
+<dialog id="dHome"><h2>{{home}}</h2>
+  <p>{{home_text}}</p>
+  <div class="stack">
+    <button data-go="home" data-v="today">{{today}}</button>
+    <button data-go="home" data-v="week">{{until_end_of_week}}</button>
+    <label for="homeUntil">{{or_until}}</label><input type="datetime-local" id="homeUntil">
+    <button data-go="home" data-v="until" class="tonal">{{set_end_time}}</button>
+    <button data-go="home" data-v="off" class="tonal">{{home_off}}</button>
+    <button class="tonal" data-close>{{cancel}}</button>
+  </div></dialog>
+
+<dialog id="dSeason"><h2>{{season}}</h2>
+  <p>{{season_text}}</p>
+  <div class="stack">
+    <button data-season="heat">{{heating}}</button>
+    <button data-season="cool">{{cooling}}</button>
+    <button class="tonal" data-close>{{cancel}}</button>
+  </div></dialog>
+
+<dialog id="dConfirm"><h2 id="cTitle"></h2><p id="cText"></p>
+  <div class="stack">
+    <button id="cYes" class="danger">{{confirm}}</button>
+    <button class="tonal" data-close>{{cancel}}</button>
+  </div></dialog>
+
+<script>
+/*TEXT*/
+const $ = (id) => document.getElementById(id);
+const fill = (text, values) => text.replace(/\{(\w+)\}/g, (_, k) => values[k]);   // "{name}" placeholders of a text
+// WMO weather codes from Open-Meteo -> [symbol, text in the page's language]
+const WX = (code, isDay) => {
+  if (code == null) return null;
+  const night = isDay === 0;
+  if (code === 0 || code === 1) return [night ? "🌙" : (code === 0 ? "☀️" : "🌤️"), code === 0 ? T.wx_clear : T.wx_mostly_clear];
+  if (code === 2) return [night ? "☁️" : "⛅", T.wx_partly_cloudy];
+  if (code === 3) return ["☁️", T.wx_cloudy];
+  if (code === 45 || code === 48) return ["🌫️", T.wx_fog];
+  if ([51, 53, 55].includes(code)) return ["🌦️", T.wx_drizzle];
+  if ([56, 57].includes(code)) return ["🌧️", T.wx_freezing_drizzle];
+  if ([61, 63, 65].includes(code)) return ["🌧️", T.wx_rain];
+  if ([66, 67].includes(code)) return ["🌧️", T.wx_freezing_rain];
+  if (code === 71) return ["❄️", T.wx_light_snow];
+  if ([73, 75, 77].includes(code)) return ["🌨️", T.wx_snow];
+  if ([80, 81, 82].includes(code)) return ["🌦️", T.wx_showers];
+  if ([85, 86].includes(code)) return ["🌨️", T.wx_snow_showers];
+  if ([95, 96, 99].includes(code)) return ["⛈️", T.wx_thunder];
+  return ["🌡️", T.wx_other];
+};
+const MODE = {heat: T.heating, cool: T.cooling, paused: T.mode_paused};
+const fmt = (v) => (v === "" || v == null) ? "–" : String(v).replace(".", T.decimal_mark);
+const when = (iso) => { if (!iso) return ""; const d = new Date(iso);
+  return d.toLocaleString(T.locale, {weekday: "short", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit"}); };
+let state = null, pending = null, day = "today", actionMsg = "", poll = null;
+const clock = (iso) => new Date(iso).toLocaleTimeString(T.locale, {hour: "2-digit", minute: "2-digit"});
+function left(iso) {                                       // time left, e.g. "2 h 13 min"
+  const m = Math.max(0, Math.round((new Date(iso) - new Date()) / 60000)), h = Math.floor(m / 60);
+  return h ? `${h} h ${m % 60} min` : `${m} min`;
+}
+function costText(e, none) {                               // rough euros from the plan with and without
+  if (none) return typeof none === "string" ? none : "";
+  if (!e) return T.cost_none;
+  const a = Math.abs(e.cents);
+  const amount = a >= 100 ? fmt((a / 100).toFixed(2)) + " €" : fmt(a < 10 ? a.toFixed(1) : String(Math.round(a))) + " c";
+  return (e.cents >= 0 ? T.cost_extra : T.cost_saving) + amount +
+    (e.until_end ? "" : T.cost_known_prices) + ".";
+}
+function overrides(s) {                                    // what a person has set, each with its end and undo
+  const out = [];
+  if (s.nudge.on) {
+    const n = s.nudge, warm = n.floor > 0 || n.shift > 0, parts = [];
+    if (n.floor) parts.push(fill(T.nudge_floor, {value: fmt(n.floor)}));
+    if (n.shift) parts.push(fill(T.nudge_shift, {sign: n.shift > 0 ? "+" : "−", value: fmt(Math.abs(n.shift))}));
+    out.push({chip: warm ? T.too_cold : T.too_hot, cls: warm ? "warm" : "cool", what: parts.join(", "),
+      end: n.until, endText: T.nudge_end, est: n.estimate,
+      btns: [["+1 h", "nudge", "longer"], [T.cancel_now, "nudge", "reset", "stop"]]});
+  }
+  const cooling = s.season === "cool", lead = `${fmt(s.away.preheat_hours)} h`;
+  if (s.away.on) out.push({chip: T.away, end: s.away.until, endText: T.away_end,
+    what: cooling ? T.away_units_off
+      : fill(T.away_what, {temp: fmt(s.away.temp), dear_price: fmt(s.away.dear_price), dear_temp: fmt(s.away.dear_temp)}),
+    note: !s.away.until ? T.until_cancelled
+      : fill(cooling ? T.away_note_cool : T.away_note_heat, {lead}),
+    est: s.away.estimate, noEst: s.away.no_estimate, btns: [[T.end_away, "away", "off", "stop"]]});
+  if (s.home.on) out.push({chip: T.home, what: T.home_what, end: s.home.until,
+    endText: T.home_end, note: s.home.until ? "" : T.until_cancelled, est: s.home.estimate,
+    btns: [[T.home_off, "home", "off", "stop"]]});
+  if (s.normal.on) out.push({chip: T.normal_now, what: fill(T.normal_what, {temp: fmt(s.normal.temp)}),
+    end: s.normal.until, endText: T.normal_end, noEst: T.normal_no_estimate,
+    btns: [[T.cancel_short, "normal", "off", "stop"]]});
+  return out;
+}
+function renderOverrides(s) {
+  const list = overrides(s), box = $("ovList");
+  $("ovCard").hidden = !list.length; $("userChip").hidden = !list.length;
+  box.replaceChildren();
+  for (const o of list) {
+    const div = (cls, text) => Object.assign(document.createElement("div"), {className: cls, textContent: text || ""});
+    const item = div("ov"), head = div("ov-head");
+    head.append(Object.assign(document.createElement("span"), {className: "chip " + (o.cls || ""), textContent: o.chip}),
+                Object.assign(document.createElement("span"), {className: "ov-what", textContent: o.what}));
+    item.append(head);
+    if (o.end) {
+      const t = div("ov-time", o.endText);
+      t.append(Object.assign(document.createElement("b"), {textContent: clock(o.end)}),
+               ` · ${new Date(o.end) - new Date() > 864e5 ? when(o.end) : left(o.end) + T.left_suffix}`);
+      item.append(t);
+    }
+    if (o.note) item.append(div("ov-time", o.note));
+    const est = costText(o.est, o.noEst);
+    if (est) item.append(div("ov-est", est));
+    const btns = div("ov-btns");
+    for (const [label, action, value, cls] of o.btns) {
+      const b = Object.assign(document.createElement("button"), {textContent: label, className: cls || ""});
+      b.onclick = () => send(action, value);
+      btns.append(b);
+    }
+    item.append(btns); box.append(item);
+  }
+}
+const RUN_TEXT = {running: T.run_running, done: T.run_done, skipped: T.run_skipped, failed: T.run_failed};
+function renderRun(r) {                                    // the outcome of the run a button started
+  const recent = r && (r.state === "running" || (r.at && new Date() - new Date(r.at) < 120000));
+  $("msg").textContent = [actionMsg, recent ? RUN_TEXT[r.state] : ""].filter(Boolean).join(" ");
+  if (!recent) actionMsg = "";
+  clearTimeout(poll);
+  if (r && r.state === "running") poll = setTimeout(load, 3000);   // until the run is over
+}
+
+function render(s) {
+  state = s;
+  document.body.dataset.mode = s.mode;
+  $("title").textContent = MODE[s.mode];
+  $("sub").textContent = s.user ? fill(T.greeting, {name: s.user}) : "";
+  renderPrice(s.plan);
+  renderChart();
+  $("units").innerHTML = s.units.length ? s.units.map(u =>
+    `<div class="unit"><div class="name">${u.name}</div>` +
+    `<div class="room">${fmt(u.room)}<small> °C</small></div>` +
+    `<div class="tgt">${fill(T.unit_target, {value: fmt(u.target)})}</div>` +
+    (u.guarded ? `<div class="guard">${T.note_comfort_guard}</div>` : "") + `</div>`).join("")
+    : `<div class="unit">${T.no_unit_data}</div>`;
+  $("awayState").textContent = s.away.on ? (s.away.until ? fill(T.away_state_until, {when: when(s.away.until)}) : T.state_on) : "";
+  $("homeState").textContent = s.home.on ? (s.home.until ? fill(T.home_state_until, {when: when(s.home.until)}) : T.state_on) : "";
+  $("seasonState").textContent = s.season === "cool" ? T.season_cooling : s.season_set ? T.season_heating : T.season_heating_default;
+  $("normalState").textContent = s.normal.on
+    ? fill(T.normal_state_on, {temp: fmt(s.normal.temp), when: when(s.normal.until)})
+    : fill(T.normal_state_off, {temp: fmt(s.normal.temp)});
+  $("pauseState").textContent = s.pause ? T.pause_state_off : T.pause_state_on;
+  renderOverrides(s);
+  renderRun(s.run);
+  $("theme").content = getComputedStyle(document.body).getPropertyValue("--bg").trim();
+}
+
+function renderPrice(p) {
+  const n = p && p.now;
+  $("priceNow").textContent = n && n.price != null ? fmt(n.price.toFixed(1)) : "–";
+  const avg = p && p.has_prices ? p.avg : null;               // the day's average, smaller, under the price
+  $("avgNow").replaceChildren();
+  if (avg != null) $("avgNow").append(T.average + " ", Object.assign(document.createElement("b"), {textContent: fmt(avg.toFixed(1))}), " c");
+  const pill = $("pill");
+  pill.textContent = n ? n.pill : ""; pill.className = "pill " + (n ? n.kind : ""); pill.hidden = !n;
+  $("whyText").textContent = n ? n.reason.text + " · " + fmt(n.target) + " °C" : T.no_plan;
+  $("whyNotes").textContent = n ? n.reason.notes.join(" · ") : "";
+  $("outNow").textContent = n && n.outdoor != null ? fmt(n.outdoor.toFixed(1)) + " °C" : "–";
+  const w = n && WX(n.weather, n.is_day);
+  $("outSym").textContent = w ? w[0] : "";
+  $("outSym").title = w ? w[1] : ""; $("outSym").setAttribute("aria-label", w ? w[1] : "");
+}
+
+const NS = "http://www.w3.org/2000/svg";
+function el(name, attrs, text) {
+  const e = document.createElementNS(NS, name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function renderChart() {
+  const svg = $("chart"); svg.replaceChildren(); $("blocks").replaceChildren();
+  const tomorrowOk = !!(state && state.plan_tomorrow && state.plan_tomorrow.has_prices);
+  if (!tomorrowOk) day = "today";                          // tomorrow exists only once its prices are out
+  $("seg").hidden = !tomorrowOk;
+  $("tabToday").setAttribute("aria-pressed", day === "today");
+  $("tabTomorrow").setAttribute("aria-pressed", day === "tomorrow");
+  const p = state && (day === "today" ? state.plan : state.plan_tomorrow);
+  $("chartNote").textContent = ""; $("dayLabel").textContent = ""; $("cheap3").textContent = "";
+  if (!p) { $("chartNote").textContent = T.no_plan; return; }
+  const d = new Date(p.date + "T12:00:00");
+  const dl = d.toLocaleDateString(T.locale, {weekday: "long", day: "numeric", month: "numeric"});
+  $("dayLabel").textContent = dl.charAt(0).toUpperCase() + dl.slice(1) +   // the shown day's average price
+    (p.has_prices && p.avg != null ? " · " + T.average + " " + fmt(p.avg.toFixed(1)) + " c" : "");
+  if (!p.has_prices) $("chartNote").textContent = T.no_prices_note;
+  renderCheapest(p);
+
+  const W = 480, H = 215, L = 30, R = 34, TOP = 20, B = 22, n = p.times.length;
+  const S0 = 232, S1 = 262;                                // outdoor strip below the hour labels
+  svg.setAttribute("viewBox", "0 0 480 " + (p.has_outdoor ? 270 : 215));
+  const prices = p.price.map(v => v == null ? 0 : v);
+  const pMax = Math.max(10, Math.ceil(Math.max(...prices) / 5) * 5);
+  const room = (p.room || []).map(v => v == null ? null : v), seen = room.filter(v => v != null);
+  const targets = p.target.filter(v => v != null);           // a past quarter with no run is a gap
+  const tMin = Math.floor(Math.min(...targets, ...seen) - 0.5), tMax = Math.ceil(Math.max(...targets, ...seen) + 0.5);
+  const x = (i) => L + (W - L - R) * i / n;
+  const yp = (v) => H - B - (H - TOP - B) * v / pMax;
+  const yt = (v) => H - B - (H - TOP - B) * (v - tMin) / (tMax - tMin);
+  const idx = (t) => { const k = p.times.indexOf(t); return k < 0 ? n : k; };
+
+  for (let v = tMin; v <= tMax; v++)                       // light temperature gridlines
+    svg.append(el("line", {x1: L, x2: W - R, y1: yt(v), y2: yt(v), class: "c-grid"}));
+  for (const b of p.blocks) {                              // pre-heat and saving bands
+    const a = x(idx(b.from)), z = b.to <= b.from ? x(n) : x(idx(b.to));
+    svg.append(el("rect", {x: a, y: TOP, width: Math.max(z - a, 1), height: H - TOP - B, rx: 3,
+      class: b.kind === "preheat" ? "c-pre" : "c-save"}));
+  }
+  if (p.has_prices) {                                      // price as a step area
+    let d = `M${x(0)},${yp(0)}`;
+    prices.forEach((v, i) => { d += ` L${x(i)},${yp(v)} L${x(i + 1)},${yp(v)}`; });
+    svg.append(el("path", {d: d + ` L${x(n)},${yp(0)} Z`, class: "c-price"}));
+  }
+  let t = "";                                              // target as a step line: what ran, then the plan
+  p.target.forEach((v, i) => { if (v != null) t += `${t && p.target[i - 1] != null ? " L" : " M"}${x(i)},${yt(v)} L${x(i + 1)},${yt(v)}`; });
+  t = t.trim();
+  svg.append(el("path", {d: t, class: "c-line"}));
+  let rd = "";                                             // measured room temperature, up to now
+  room.forEach((v, i) => { if (v != null) rd += `${rd && room[i - 1] != null ? " L" : " M"}${x(i + .5)},${yt(v)}`; });
+  if (rd) svg.append(el("path", {d: rd.trim(), class: "c-room"}));
+
+  p.times.forEach((tm, i) => {                             // hour ticks every three hours
+    if (tm.endsWith(":00") && parseInt(tm) % 3 === 0)
+      svg.append(el("text", {x: x(i), y: H - 6, "text-anchor": "middle"}, parseInt(tm)));
+  });
+  const tMid = Math.round((tMin + tMax) / 2);               // a middle value on a gridline, so the lines are readable
+  [tMin, tMid, tMax].forEach(v => svg.append(el("text", {x: L - 5, y: yt(v) + 3, "text-anchor": "end"}, v + "°")));
+  if (p.has_prices) [0, pMax / 2, pMax].forEach(v => svg.append(el("text", {x: W - R + 5, y: yp(v) + 3}, fmt(v) + " c")));
+
+  let yo = null;
+  if (p.has_outdoor) {                                     // outdoor temperature: own scale, same time axis
+    const vals = p.outdoor.filter(v => v != null);
+    const oMin = Math.floor(Math.min(...vals)), oMax = Math.max(Math.ceil(Math.max(...vals)), oMin + 2);
+    yo = (v) => S1 - (S1 - S0) * (v - oMin) / (oMax - oMin);
+    svg.append(el("line", {x1: L, x2: W - R, y1: S1 + 3, y2: S1 + 3, class: "c-outbase"}));
+    let d = "";
+    p.outdoor.forEach((v, i) => { if (v != null) d += `${d ? " L" : "M"}${x(i + .5)},${yo(v)}`; });
+    svg.append(el("path", {d, class: "c-out"}));
+    p.times.forEach((tm, i) => {                           // a weather symbol every three hours
+      const w = tm.endsWith(":00") && parseInt(tm) % 3 === 0 && WX(p.weather[i], p.is_day[i]);
+      if (w) svg.append(el("text", {x: x(i), y: S0 - 5, "text-anchor": "middle", class: "c-wx"}, w[0]));
+    });
+    [oMin, oMax].forEach(v => svg.append(el("text", {x: L - 5, y: yo(v) + 3, "text-anchor": "end"}, v + "°")));
+  }
+  if (day === "today" && p.now_index != null) {            // where we are now: a clear vertical line
+    const nx = x(p.now_index + .5), ny = yt(p.target[p.now_index]);
+    svg.append(el("line", {x1: nx, x2: nx, y1: TOP - 4, y2: yo ? S1 + 3 : H - B, class: "c-now"}));
+    if (yo && p.outdoor[p.now_index] != null)
+      svg.append(el("circle", {cx: nx, cy: yo(p.outdoor[p.now_index]), r: 3.8, class: "c-outdot"}));
+    svg.append(el("rect", {x: nx - 14, y: 1, width: 28, height: 15, rx: 7.5, class: "c-nowtag"}));
+    svg.append(el("text", {x: nx, y: 11.5, "text-anchor": "middle", class: "c-nowtext"}, T.now_tag));
+    svg.append(el("circle", {cx: nx, cy: ny, r: 4.6, class: "c-nowdot"}));
+  }
+  const cool = p.mode === "cool";                          // cooling: a pre-cool, and saving is warmer
+  const names = {preheat: cool ? T.pre_cool : T.pre_heat, save: T.legend_saving};
+  $("preName").textContent = names.preheat;
+  p.blocks.forEach(b => { const e = document.createElement("div"); e.textContent = `${names[b.kind]} ${b.from}–${b.to}`; $("blocks").append(e); });
+  if (!p.blocks.length) $("blocks").textContent = T[cool ? "no_bands_cool" : "no_bands_heat"];
+}
+
+function renderCheapest(p) {                              // when to start the laundry: today or tomorrow?
+  const box = $("cheap3"), line = (text) => Object.assign(document.createElement("div"), {textContent: text});
+  box.replaceChildren();
+  if (!p.has_prices) return;
+  const c = (v) => fmt(v.toFixed(1)) + " c", c3 = p.cheapest;
+  const tm = state.plan_tomorrow, t3 = day === "today" && tm && tm.has_prices ? tm.cheapest : null;
+  if (c3) box.append(line(fill(day === "today" ? T.cheapest_today : T.cheapest_tomorrow, {from: c3.from, to: c3.to, avg: c(c3.avg)})));
+  else if (day === "today") box.append(line(T.cheapest_none));
+  if (t3) {
+    const diff = t3.avg - (c3 ? c3.avg : Infinity);
+    const verdict = !c3 ? "" : Math.abs(diff) < 0.3 ? T.verdict_same : diff > 0 ? T.verdict_today : T.verdict_tomorrow;
+    const row = line(fill(T.tomorrow_line, {from: t3.from, to: t3.to, avg: c(t3.avg), day_avg: c(tm.avg)}));
+    if (verdict) row.append(Object.assign(document.createElement("span"),
+      {className: "chip" + (diff < -0.3 ? " good" : ""), textContent: verdict}));   // green only when waiting for tomorrow pays
+    box.append(row);
+  }
+}
+
+async function load() {
+  try { const r = await fetch("/api/status"); if (r.ok) render(await r.json()); else $("sub").textContent = T.no_access; }
+  catch { $("sub").textContent = T.no_connection; }
+}
+
+async function send(action, value, confirm) {
+  $("msg").textContent = "…";
+  try {
+    const r = await fetch("/api/action", {method: "POST",
+      headers: {"Content-Type": "application/json", "X-Requested-With": "ilp-page"},
+      body: JSON.stringify({action, value, confirm: !!confirm})});
+    const j = await r.json();
+    actionMsg = r.ok ? j.message : (j.error || T.error);
+    $("msg").textContent = actionMsg + (r.ok ? T.updating_units : "");
+  } catch { actionMsg = T.no_connection; $("msg").textContent = actionMsg; }
+  document.querySelectorAll("dialog[open]").forEach(d => d.close());
+  load();
+}
+
+$("lang").onclick = async () => {
+  try {
+    const r = await fetch("/api/language", {method: "POST",
+      headers: {"Content-Type": "application/json", "X-Requested-With": "ilp-page"},
+      body: JSON.stringify({language: $("lang").dataset.lang})});
+    if (r.ok) { location.reload(); return; }
+    $("msg").textContent = (await r.json()).error || T.error;
+  } catch { $("msg").textContent = T.no_connection; }
+};
+
+function confirmThen(title, text, fn) {
+  $("cTitle").textContent = title; $("cText").textContent = text; pending = fn; $("dConfirm").showModal();
+}
+$("cYes").onclick = () => { const fn = pending; pending = null; if (fn) fn(); };
+
+$("tabToday").onclick = () => { day = "today"; renderChart(); };
+$("tabTomorrow").onclick = () => { day = "tomorrow"; renderChart(); };
+$("cold").onclick = () => send("nudge", "warmer");
+$("hot").onclick = () => send("nudge", "cooler");
+$("away").onclick = () => { $("awayOff").hidden = !(state && state.away.on); $("dAway").showModal(); };
+$("normal").onclick = () => state && state.normal.on
+  ? send("normal", "off")
+  : confirmThen(T.confirm_normal_title,
+      fill(T.confirm_normal_text, {temp: fmt(state ? state.normal.temp : 21)}),
+      () => send("normal", "on", true));
+$("home").onclick = () => $("dHome").showModal();
+$("season").onclick = () => $("dSeason").showModal();
+$("pause").onclick = () => state && state.pause
+  ? send("pause", "off")
+  : confirmThen(T.confirm_pause_title, T.confirm_pause_text, () => send("pause", "on", true));
+
+document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => b.closest("dialog").close());
+document.querySelectorAll("[data-go]").forEach(b => b.onclick = () => {
+  const kind = b.dataset.go; let v = b.dataset.v;
+  if (v === "until") { v = $(kind + "Until").value; if (!v) { $("msg").textContent = T.pick_time; return; } }
+  send(kind, v);
+});
+document.querySelectorAll("[data-season]").forEach(b => b.onclick = () => {
+  const s = b.dataset.season;
+  $("dSeason").close();
+  confirmThen(fill(T.confirm_season_title, {season: s === "cool" ? T.season_cooling : T.season_heating}),
+    s === "cool" ? T.confirm_season_cool : T.confirm_season_heat, () => send("season", s, true));
+});
+
+load(); setInterval(load, 30000);
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # requirements.txt pins only major versions on purpose (pymelcloud uses an unofficial API),
+  # so a bump is a PR to read, with the tests as the check.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

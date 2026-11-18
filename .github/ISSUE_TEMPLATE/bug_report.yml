@@ -1,0 +1,50 @@
+name: Bug report
+description: Something the controller or the phone page does wrongly
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [limitations](https://github.com/frimodig/melcloud-spot-heating#limitations-read-first)
+        first. Never paste a password, token, ping URL or your address or coordinates.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: dropdown
+    id: account
+    attributes:
+      label: MELCloud account type
+      description: If `./run.sh --list` cannot log in, the account is probably MELCloud Home, which is not supported.
+      options:
+        - Classic MELCloud
+        - MELCloud Home
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: prices
+    attributes:
+      label: Country and price source
+      description: For example "Finland, porssisahko.net" or "Sweden SE3, ENTSO-E".
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `git rev-parse --short HEAD`, plus your Python version.
+    validations:
+      required: true
+  - type: textarea
+    id: units
+    attributes:
+      label: Units and settings
+      description: How many indoor units, and the relevant lines of your `config.local.toml`.
+  - type: textarea
+    id: log
+    attributes:
+      label: Log of the run
+      description: The relevant lines of `ilp_optimizer.log`, or `./run.sh --plan` output. Remove anything personal.
+      render: text

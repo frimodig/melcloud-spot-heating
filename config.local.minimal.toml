@@ -1,0 +1,28 @@
+# The smallest setup: a config.local.toml that switches every optional rule off. What is left is the
+# base schedule (a flat 21 C), the price shifts around it (cheap hours a little warmer, dear ones
+# cooler, peaks cut), the room guard and the limits. Only .env is required (the MELCloud login);
+# start here and switch on what fits your house (docs/how-it-works.md says what each one does).
+
+[comfort_windows]   # cuts capped by price while the house is in use
+enabled = false
+
+[comfort_warmup]    # warm-up before a comfort window opens
+enabled = false
+
+[comfort_preheat]   # the hour before the schedule steps up
+enabled = false
+
+[spikes]            # a single dear quarter cut a little
+enabled = false
+
+[hour_shaping]      # the dearest quarter of a dear hour cut a little
+enabled = false
+
+[above_average]     # quarters dearer than the day's average cut outside comfort time (and its keep windows)
+enabled = false
+
+[solar]             # the sun lowers the target (also off until the location is set)
+enabled = false
+
+[weather]           # the outdoor temperature scales the shifts (also off until the location is set)
+enabled = false

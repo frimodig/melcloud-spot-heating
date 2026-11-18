@@ -1,0 +1,393 @@
+# melcloud-spot-heating's default settings. Don't edit this file: put your own settings in config.local.toml
+# next to it (not in git), which overrides only what it names (see config.local.example.toml).
+# Times are local times in `timezone`.
+
+timezone = "Europe/Helsinki"
+log_file = "ilp_optimizer.log"   # relative to the app directory
+log_max_bytes = 1000000          # rotate at 1 MB ...
+log_backup_count = 3             # ... keep 3 old files (about 4 MB max)
+unit_state_file = "unit_state.json"  # per-unit memory between runs (manual-change hold)
+history_file = "history.csv"     # one row per unit per run; written to history-YYYY-MM.csv, one file a month
+telemetry_file = "telemetry.csv"  # what each unit reports every run; written to telemetry-YYYY-MM.csv
+price_history_file = "price_history.csv"  # every price interval seen once (the feed has only 2 days)
+
+# What `--report` measures the saving against: the way the house ran before this controller, as a
+# schedule like [schedule]. The unit offsets are not applied to it: it is the literal setpoint of
+# every unit.
+[baseline]
+label = "a constant 21 C"
+weekday = [["00:00", 21.0]]
+weekend = [["00:00", 21.0]]
+
+# The base temperature the price rules shift around. Weekday = Mon-Fri, weekend = Sat-Sun. Each
+# entry ["HH:MM", C] stays active until the next one; every day starts with its own 00:00 entry.
+# A schedule with a cooler night and empty daytime saves more: see config.local.example.toml.
+[schedule]
+weekday = [["00:00", 21.0]]
+weekend = [["00:00", 21.0]]
+
+# When the house is lived in (waking, at home) a price cut is limited by the price: `tiers` is
+# (price below which, biggest cut in C). Under 10 c comfort is fully protected; at 50 c or more
+# (the peak protector) it is not limited. Windows are local times; the weekend list is also used
+# on HOLIDAY and HOME days. Heating only.
+[comfort_windows]
+enabled = true
+weekday = [["06:00", "08:00"], ["18:00", "22:00"]]
+weekend = [["07:00", "12:00"], ["17:00", "22:00"]]
+tiers = [[10.0, 0.0], [20.0, 0.5], [50.0, 1.0]]
+
+# Before each comfort window opens the rooms warm up ([warmup]) from the plan before it to the plan at
+# its start (the window's temperature less its price cap), over at most `hours`; a peak keeps its cut.
+[comfort_warmup]
+enabled = true
+hours = 1.0
+
+# A single quarter hour well above the quarters around it is cut a little, even in comfort hours
+# and at low prices: at least min_jump c/kWh and min_ratio over the median of the `neighbours`
+# quarters on each side.
+[spikes]
+enabled = true
+min_jump = 1.5
+min_ratio = 0.2
+neighbours = 4
+cut = 0.5
+
+# In every clock hour dearer than the day's average whose quarters differ by at least min_spread
+# c/kWh and min_ratio of the hour's mean, the dearest quarter is cut by `cut`, also in comfort hours,
+# and in comfort hours the cheapest quarter is never cut. A 15-minute dip is not felt; an hour is.
+[hour_shaping]
+enabled = true
+min_spread = 1.0
+min_ratio = 0.15
+cut = 0.5
+
+# Before the base schedule steps up to the day's warmest temperature, the `quarters` cheapest quarter
+# hours of the `lead_hours` before the step already get the coming temperature, unless the
+# lead_hours after the step cost less than (1 + min_ratio) x their average.
+[comfort_preheat]
+enabled = true
+lead_hours = 1       # the units warm the air in 15-30 min and it cools as fast: heat banked earlier is lost
+quarters = 4         # ... so the whole last hour before the step, when it is cheaper enough
+min_ratio = 0.2
+
+# Outside the comfort time (the comfort windows and the hours at the schedule's warmest temperature),
+# a quarter more than min_ratio above the day's average price runs `cut` C lower: the night and the
+# empty house save where power is dearer, down to min_temp at most.
+[above_average]
+enabled = true
+cut = 1.0
+min_ratio = 0.1
+min_above = 1.0      # ... and at least this many c/kWh over the average: no cuts for fractions of a cent
+# No cut in these local times (someone is usually home), e.g.
+#   keep_weekday = [{from = "14:30", to = "17:30", units = ["Living room"], comfort = true}]
+# `units` limits a window to those units; `comfort = true` also caps every other cut by the
+# comfort tiers, as in a comfort window.
+keep_weekday = []
+keep_weekend = []
+
+# Off by default. In the night window the `units` (say, the one by the bedrooms) get no flat cut
+# (the above-average, expensive and extreme cuts) and follow the price instead: a quarter clearly
+# cheaper than the night's median runs `shift` warmer whatever its price ("clearly": min_diff c/kWh
+# and min_ratio of the median); every other quarter drops to the floor its price allows. `tiers` is
+# (price over which, cut C); under the first tier it holds, also for a one-quarter spike or dear
+# quarter. An hour with a cut and no boosted quarter boosts its cheapest one. Only a peak (peak_price)
+# cuts deeper; pre-heats and a bigger cheap boost stay. The other units keep the normal night rules
+# and may sit low, but not under others_floor (a peak still cuts).
+[night_shift]
+enabled = false
+weekday = ["00:00", "05:00"]
+weekend = ["00:00", "06:00"]
+units = []
+shift = 0.5
+min_diff = 0.5
+min_ratio = 0.05
+tiers = [[20.0, 0.5], [30.0, 1.0]]
+others_floor = 18.0
+# The evening before the night: from each time the `units` run that many C under the schedule, while
+# the schedule is at least cooldown_min_gap above the night's temperature (e.g. 21 C at 22:00 -> 20.5,
+# 20 at 23:00, then a 19 C night from midnight). A cheap boost gives way to it; a peak cuts deeper.
+cooldown = [["22:00", 0.5], ["23:00", 1.0]]
+cooldown_min_gap = 1.5
+# Sleeping warmth: the `units` never run above this from the first cooldown step to the end of the
+# night, however cheap the power. Only the comfort pre-heat before the morning may go over it.
+max_temp = 21.0
+
+[limits]
+min_temp = 16.0            # the one heating floor; lower is not verified on MELCloud units
+max_temp = 22.0
+extreme_min_temp = 16.0    # the [extreme] rules' floor (20c+ and peaks): now the same as min_temp
+extreme_max_temp = 24.0
+step = 0.5                 # MELCloud setpoint step
+
+# The price feeds, in priority order: the first that gives prices is used, the next ones are fallbacks.
+# "porssisahko" (Finland only, no key; porssisahko.net's 15-minute feed) or "entsoe" (any European
+# bidding zone, from the ENTSO-E Transparency Platform; put a free API token in .env as ENTSOE_TOKEN). All thresholds here and in the rules are c/kWh, tuned to Finnish winter prices with
+# porssisahko.net: retune them to your prices.
+[prices]
+sources = ["porssisahko"]   # e.g. ["porssisahko", "entsoe"]: ENTSO-E when porssisahko.net is down
+url = "https://api.porssisahko.net/v2/latest-prices.json"   # porssisahko: 15-minute prices (v1 is hourly)
+timeout_seconds = 15
+min_hours_available = 20   # fewer hours of the day's prices -> base schedule only
+cheap_hours = 6
+cheap_all = true           # also boost every other interval at or below cheap_max and below the day's average ...
+cheap_all_boost = 1.0      # ... by this much (a gentle floor: the empty house is not heated hard on a cheap day)
+expensive_hours = 4
+boost = 1.0                # added in the cheapest hours (x weather factor), when nearly free (cheap_max)
+cut = 1.0                  # subtracted in the most expensive hours
+cut_deep = 1.5             # subtracted when price >= very_expensive
+cheap_max = 3.0            # c/kWh: boost only if price <= this (nearly free)
+expensive_min = 12.0       # c/kWh: cut only if price >= this
+very_expensive = 30.0      # c/kWh: deep cut if price >= this
+min_spread = 4.0           # c/kWh: day max - min below this -> no cuts ...
+flat_day_boost = true      # ... but the cheap boosts (cheap_max) still apply on such a day
+
+# "entsoe": ENTSO-E gives the spot price in EUR/MWh without tax; it is turned into c/kWh
+# and `vat` (percent) and `margin` (c/kWh, e.g. your retailer's) are added, so the thresholds above
+# compare against what you pay per kWh of energy. porssisahko.net's prices include Finland's VAT, so
+# the defaults (Finland's zone and VAT) give the same prices; set your zone's EIC code (the
+# Transparency Platform lists them) and your country's VAT.
+[prices.entsoe]
+url = "https://web-api.tp.entsoe.eu/api"
+zone = "10YFI-1--------U"
+vat = 25.5
+margin = 0.0
+
+# Rules driven by price alone (not scaled by weather); they may use the extreme limits.
+[extreme]
+cut_price = 20.0           # c/kWh: the priciest intervals at or above this are cut ...
+cut_hours = 6              # ... (this many hours of them; other 20c+ hours get the normal cut) ...
+cut = 3.0                  # ... by this many C (floor: extreme_min_temp)
+spike_ratio = 3.0          # spike = price >= this x the day's median ...
+spike_min_price = 15.0     # ... and at least this many c/kWh
+preheat_hours = 2          # pre-heat this long before a spike starts ...
+preheat_boost = 2.0        # ... by this many C (ceiling: extreme_max_temp)
+# Peak protector (heating only): an interval at or above peak_price is always cut by `cut`,
+# whatever the rest of the day looks like (no cut_hours cap). The peak_preheat_hours before a
+# peak are pre-heated by peak_preheat_boost, in intervals up to peak_preheat_max_price.
+peak_price = 50.0          # c/kWh
+peak_preheat_hours = 3
+peak_preheat_boost = 3.0   # ceiling: extreme_max_temp
+peak_preheat_max_price = 30.0
+peak_room_min = 16.0       # the comfort guard's room_min during a peak (normally [comfort] room_min)
+
+# Outdoor temperature scales the normal boost/cut: the colder, the more a shift is worth. Forecast
+# from Open-Meteo (no key); on failure the factor is 1.0. The location is WEATHER_LATITUDE and
+# WEATHER_LONGITUDE in .env (and web.env): without them weather and sun stay off.
+[weather]
+enabled = true
+url = "https://api.open-meteo.com/v1/forecast"
+timeout_seconds = 15
+# (outdoor C, factor): linear in between, flat outside. -10 and colder -> x1.5, +10 and warmer -> x0.5
+scale = [[-10.0, 1.5], [10.0, 0.5]]
+
+# Transient errors (connection, timeout, 5xx/429) are retried with exponential backoff.
+# Bad credentials are never retried. After breaker_failure_threshold consecutive failed
+# runs (login/connectivity, after retries) the breaker opens and runs are skipped for
+# breaker_cool_off_minutes; the first run after that is a trial. state_file keeps the count.
+[resilience]
+retry_attempts = 4               # tries per call, i.e. 3 retries: waits 5 s, 10 s, 20 s
+retry_base_delay_seconds = 5
+retry_max_delay_seconds = 30
+operation_timeout_seconds = 60   # also stops a hung MELCloud write
+breaker_failure_threshold = 3
+breaker_cool_off_minutes = 60
+state_file = "state.json"
+
+# Dead-man alert: after a healthy run the controller GETs the URL in HEARTBEAT_URL (.env);
+# the service emails when the pings stop. No URL set = no ping. Failed runs and runs
+# skipped by the open circuit breaker do not ping.
+[heartbeat]
+timeout_seconds = 10
+
+# The room temperature has the last word: price cuts are ignored while the room is colder
+# than room_min, and price boosts/pre-heat while it is at or above room_max.
+[comfort]
+room_min = 17.0
+room_max = 23.0
+
+# While nobody is home (away, and on weekdays the `weekday` window, e.g. ["08:00", "15:00"]; empty =
+# no window) the house is not heated unless that saves money later. The target is `temp`, or
+# `dear_temp` in a quarter dearer than `dear_price` c/kWh, and never above the plan; above that only
+# in a quarter under `bank_price` that pre-heats before a spike or peak later ([extreme] preheat and
+# peak pre-heat). The window comes before the comfort and keep windows. Home and HOLIDAY days have no
+# window. Heating only. At the window's end someone is home: the rooms warm up for it as for a return
+# from away, from `temp`, at most warmup_hours before.
+[nobody_home]
+weekday = []
+temp = 17.0
+dear_temp = 16.0
+dear_price = 10.0
+bank_price = 5.0
+warmup_hours = 2.0   # the longest warm-up ([warmup]) before the first arrival at the window's end
+
+# Everyone out: the [nobody_home] floors hold until `rm AWAY`. Put a local return time
+# in the file, e.g. `echo 2026-11-14T18:00 > AWAY`, and the house warms up for the return, at most
+# preheat_hours before it; after the return time the file is ignored.
+# While the units are cooling, away switches them OFF instead, and back on preheat_hours
+# before the return time (or when AWAY is removed). It only switches on units it switched off.
+[away]
+preheat_hours = 2.0   # the longest warm-up (5 C at warmup_rate takes ~1 h 40 min); cooling comes back on this early
+
+# Every warm-up (the return from away, the end of the nobody-home window, the comfort windows) climbs in equal
+# steps to the plan's setpoint at the arrival, in as many quarters as the units need (warmup_rate),
+# those the cheapest of the window before it; the quarters between hold the level reached. In a live
+# run a heating quarter stays a quarter's lift above the room. The saving comes from buying the heat
+# in the cheapest quarters, not from arriving to a colder house.
+[warmup]
+warmup_rate = 3.0     # C per hour the units lift the rooms (one house's telemetry, mild weather: tune to yours)
+cooling_rate = 0.3    # C per hour empty rooms coast down, when there is no room reading (the same house)
+
+# `echo cool > SEASON` (or `--season cool`, or the page's Season button) makes the controller put
+# all units in that mode together, with the matching setpoint, at the next run, and again whenever
+# it is changed: there are no guards. By default a unit in any other mode (dry, fan, auto) or
+# switched off is brought to the season's mode and turned on at every run (not while away in cooling
+# mode); [control] season_enforce changes that. No SEASON file, or an unreadable one, means heat:
+# winter is the safe default.
+
+# `touch HOLIDAY` (or put an end date-time in it) uses the weekend heating schedule every
+# day, e.g. for school holidays. Cooling has a flat setpoint and ignores it.
+
+# Sun heats the rooms more directly than the air does. The forecast shortwave radiation
+# (W/m2, clouds included, from Open-Meteo) always lowers the setpoint: when heating, the sun
+# does part of the work; when cooling, the target drops ahead of the heat (cool_lookahead_hours).
+# The effect grows linearly from `low` to `high` W/m2, and is scaled per unit by
+# [units.solar_weight]. Basic version: no sun angle, window orientation or shading.
+[solar]
+enabled = true
+low = 100.0
+high = 500.0
+heat_max_cut = 1.0
+cool_max_boost = 1.0
+cool_lookahead_hours = 1
+
+# Someone is home (sick day, working from home, school closed). `./run.sh --home today` or
+# `--home week` (to the end of Sunday), `--home 2026-11-14T18:00`, `--home off`; or a HOME file,
+# empty or holding an end date-time. It uses the weekend schedule, caps price cuts at max_cut,
+# and in the daytime keeps heating at or above heat_day_floor (cooling at or below
+# cool_day_ceiling). Boosts and pre-heat still apply. Away wins if both are set.
+[home]
+max_cut = 0.5
+day_start = "07:00"
+day_end = "22:00"
+heat_day_floor = 20.0
+cool_day_ceiling = 24.5
+
+# `./run.sh --control nudge warmer|cooler|longer|reset` (the page's too-cold / too-hot buttons): one
+# step on every unit, lasting `hours` from the last press. "Warmer" while the plan is cutting lifts the
+# floor (cut quarters, never above the uncut plan); after that it raises the plan, up to
+# extreme_max_temp. Floor and raise together stay within max; "longer" adds an hour.
+[nudge]
+step = 1.0
+max = 2.0
+hours = 3.0
+
+# `--control normal on` (the page's "Normal heat now"): all units go to `temp` at once, heating or
+# cooling by the average room temperature, whatever the season and plan say. It ends when every room
+# has reached the temperature (or after `timeout_hours`), and the units return to the season / the plan.
+# Every target the controller writes also sets the fan back to auto.
+[normal]
+temp = 21.0
+timeout_hours = 4.0
+fan_full = true      # fans at their top speed while it runs; back to auto when it ends
+
+# `--control pause on` (the page's off switch): all units get one flat write of heat_temp (cooling
+# units: the cooling setpoint), then the controller leaves them alone until `--control pause off`.
+[pause]
+heat_temp = 21.0
+
+# The remote page (web.py): loopback only, put `tailscale serve` in front of it. Keep host on 127.0.0.1:
+# the page trusts the login header, which only the proxy may set; reachable from elsewhere, anyone
+# could send it and control the units. Who may use it is
+# in web.env: WEB_USERS='login=nickname,login=nickname' (the nickname is what the page and web.log show).
+[web]
+host = "127.0.0.1"
+port = 8080
+language = "en"                   # the page's language: "en" or "fi"
+# The login header the proxy in front of the page sends (Tailscale serve's by default).
+user_header = "Tailscale-User-Login"
+# The page's cheapest stretch of `cheapest_hours` (for the laundry and the like), only in the hours
+# someone is usually home.
+cheapest_hours = 3
+home_hours_weekday = ["17:00", "24:00"]
+home_hours_weekend = ["07:00", "24:00"]
+
+# The page's rough cost or saving of an override (too cold / too hot, away, home): each degree on each
+# unit for a quarter hour takes about this much electricity (one house's `--report`, mild weather; in
+# hard frost it is more). Update it from your own `--report`.
+[estimate]
+wh_per_degree_quarter = 2.0
+
+[control]
+min_change = 0.5                  # only write if target differs by at least this
+manual_hold_minutes = 60          # a target changed by someone else holds that unit this long (0 = off)
+allowed_modes = ["heat", "cool"]  # pymelcloud names. Not heat_cool (MELCloud "auto"): on a multi-split the indoor units could disagree
+# How firmly the season is kept: "always" (every run turns units on and into the season's mode),
+# "running" (every run, but a unit someone switched off stays off), "on_change" (each unit once when
+# the season changes, heat to cool or back; between changes units stay as people leave them).
+season_enforce = "always"
+
+# ---- Cooling (summer) --------------------------------------------------------
+# Applies to units that are in cool mode. One flat setpoint every day: the house is in use
+# all day in the summer, so there is no weekday schedule. Price shifting mirrors heating: cheap
+# hours cool down further (pre-cool), expensive hours let the room drift warmer. Summer
+# prices are much lower than winter ones, so the thresholds are too. FIRST GUESSES: tune
+# them against real summer prices and history.csv.
+[cool]
+temp = 23.0
+
+[cool.limits]
+min_temp = 21.0
+max_temp = 26.0
+extreme_min_temp = 20.0     # reachable only through [cool.extreme]
+extreme_max_temp = 27.0
+step = 0.5
+
+[cool.prices]
+min_hours_available = 20
+cheap_hours = 4
+expensive_hours = 4
+boost = 1.0                 # setpoint lowered this much in the cheapest hours
+cut = 1.0                   # setpoint raised this much in the priciest hours
+cut_deep = 1.5
+cheap_max = 4.0             # c/kWh: pre-cool only if price <= this
+expensive_min = 7.0         # c/kWh: let it drift only if price >= this
+very_expensive = 15.0
+min_spread = 2.0
+
+[cool.extreme]
+cut_price = 12.0
+cut_hours = 6
+cut = 2.0                   # setpoint raised this much (ceiling: extreme_max_temp)
+spike_ratio = 3.0
+spike_min_price = 8.0
+preheat_hours = 2           # pre-cool this long before a spike ...
+preheat_boost = 1.5         # ... by this much (floor: extreme_min_temp)
+
+# Hot days make a shift worth more: x0.5 at 15 C or cooler, x1.5 at 25 C or warmer.
+[cool.weather]
+enabled = true
+scale = [[15.0, 0.5], [25.0, 1.5]]
+
+# Price drift is ignored in a room warmer than room_max; pre-cooling in one cooler than room_min.
+[cool.comfort]
+room_min = 21.5
+room_max = 25.5
+
+[units]
+# Names as printed by --list. Empty list = control every air-to-air unit.
+names = []
+# Units that share one outdoor unit (a multi-split), one list per outdoor unit. They always run in the
+# same mode: differing modes stop the controller from changing them, and "normal now" picks one mode
+# for them. Every unit not listed has its own outdoor unit. Empty = all units self-contained.
+outdoor_groups = []
+
+# Per-unit offset in C for heating, added after the price shift and before the limits, by unit name
+# ("Living room" = 0.5). Tune from history (room_temp against each unit's target) if a unit needs one.
+[units.offsets]
+
+# The same for cooling (cold air sinks: an upstairs unit may run cooler).
+[units.cool_offsets]
+
+# How strongly each unit's rooms feel the sun, 0 to 1 (missing = 1.0): a room with large south
+# windows 1.0, a shaded one less. Tune from history.csv on sunny days.
+[units.solar_weight]

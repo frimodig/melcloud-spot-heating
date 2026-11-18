@@ -1,0 +1,257 @@
+# Frozen copy of the config the logic tests were written against (schedule and rules as of
+# 2026-11-12), so changing the live schedule in ../config.toml does not rewrite their expectations.
+# ilp_optimizer configuration. Times are Europe/Helsinki local time.
+
+timezone = "Europe/Helsinki"
+log_file = "ilp_optimizer.log"   # relative to the app directory
+log_max_bytes = 1000000          # rotate at 1 MB ...
+log_backup_count = 3             # ... keep 3 old files (about 4 MB max)
+unit_state_file = "unit_state.json"  # per-unit memory between runs (manual-change hold)
+history_file = "history.csv"     # one row per unit per run; written to history-YYYY-MM.csv, one file a month
+telemetry_file = "telemetry.csv"  # what each unit reports every run; written to telemetry-YYYY-MM.csv
+price_history_file = "price_history.csv"  # every price interval seen once (the feed has only 2 days)
+
+# The old MELCloud timer (disabled 2026-11-11): the baseline for `--report`'s saving estimate.
+[baseline]
+weekday = [
+  ["00:00", 19.0],
+  ["05:30", 22.0],
+  ["08:00", 19.0],
+  ["15:00", 21.0],
+]
+weekend = [
+  ["00:00", 19.0],
+  ["08:00", 21.0],
+]
+
+# Weekday = Mon-Fri, weekend = Sat-Sun. Each entry stays active until the next
+# one. Every day must start with its own 00:00 entry.
+[schedule]
+weekday = [
+  ["00:00", 19.0],  # sleeping; cheap night hours are pre-heated by the price boost below
+  ["05:00", 21.0],  # up around 6
+  ["08:30", 19.0],  # daytime: the house is empty
+  ["14:00", 21.0],  # lighter in the afternoon
+  ["22:30", 20.0],  # in bed by midnight
+]
+weekend = [
+  ["00:00", 19.0],
+  ["07:00", 21.0],  # warm when people get up around 8
+  ["22:30", 20.0],
+]
+
+[limits]
+min_temp = 18.0
+max_temp = 22.0
+extreme_min_temp = 17.0    # reachable only through the [extreme] rules
+extreme_max_temp = 24.0
+step = 0.5                 # MELCloud setpoint step
+
+[prices]
+url = "https://api.porssisahko.net/v2/latest-prices.json"   # 15-minute prices (v1 is hourly)
+timeout_seconds = 15
+min_hours_available = 20   # fewer hours of the day's prices -> base schedule only
+cheap_hours = 6
+expensive_hours = 4
+boost = 2.0                # added in the cheapest hours (x weather factor): the night pre-heat
+cut = 1.0                  # subtracted in the most expensive hours
+cut_deep = 1.5             # subtracted when price >= very_expensive
+cheap_max = 8.0            # c/kWh: boost only if price <= this
+expensive_min = 12.0       # c/kWh: cut only if price >= this
+very_expensive = 30.0      # c/kWh: deep cut if price >= this
+min_spread = 4.0           # c/kWh: day max - min below this -> no shifting
+
+# Rules driven by price alone (not scaled by weather); they may use the extreme limits.
+[extreme]
+cut_price = 20.0           # c/kWh: the priciest intervals at or above this are cut ...
+cut_hours = 6              # ... (this many hours of them; other 20c+ hours get the normal cut) ...
+cut = 3.0                  # ... by this many C (floor: extreme_min_temp)
+spike_ratio = 3.0          # spike = price >= this x the day's median ...
+spike_min_price = 15.0     # ... and at least this many c/kWh
+preheat_hours = 2          # pre-heat this long before a spike starts ...
+preheat_boost = 2.0        # ... by this many C (ceiling: extreme_max_temp)
+# Peak protector (heating only): an interval at or above peak_price is always cut by `cut`,
+# whatever the rest of the day looks like (no cut_hours cap). The peak_preheat_hours before a
+# peak are pre-heated by peak_preheat_boost, in intervals up to peak_preheat_max_price.
+peak_price = 50.0          # c/kWh
+peak_preheat_hours = 3
+peak_preheat_boost = 3.0   # ceiling: extreme_max_temp
+peak_preheat_max_price = 30.0
+peak_room_min = 17.0       # the comfort guard's room_min during a peak (normally [comfort] room_min)
+
+# Outdoor temperature scales the normal boost/cut: the colder, the more a shift is
+# worth. Forecast daily mean from Open-Meteo (no key); on failure the factor is 1.0.
+[weather]
+enabled = true
+url = "https://api.open-meteo.com/v1/forecast"
+latitude = 60.17          # example (central Helsinki)
+longitude = 24.94
+timeout_seconds = 15
+# (outdoor C, factor): linear in between, flat outside. -10 and colder -> x1.5, +10 and warmer -> x0.5
+scale = [[-10.0, 1.5], [10.0, 0.5]]
+
+# Transient errors (connection, timeout, 5xx/429) are retried with exponential backoff.
+# Bad credentials are never retried. After breaker_failure_threshold consecutive failed
+# runs (login/connectivity, after retries) the breaker opens and runs are skipped for
+# breaker_cool_off_minutes; the first run after that is a trial. state_file keeps the count.
+[resilience]
+retry_attempts = 4               # tries per call, i.e. 3 retries: waits 5 s, 10 s, 20 s
+retry_base_delay_seconds = 5
+retry_max_delay_seconds = 30
+operation_timeout_seconds = 60   # also stops a hung MELCloud write
+breaker_failure_threshold = 3
+breaker_cool_off_minutes = 60
+state_file = "state.json"
+
+# Dead-man alert: after a healthy run the controller GETs the URL in HEARTBEAT_URL (.env);
+# the service emails when the pings stop. No URL set = no ping. Failed runs and runs
+# skipped by the open circuit breaker do not ping.
+[heartbeat]
+timeout_seconds = 10
+
+# The room temperature has the last word: price cuts are ignored while the room is colder
+# than room_min, and price boosts/pre-heat while it is at or above room_max.
+[comfort]
+room_min = 18.5
+room_max = 23.0
+
+# Everyone out (17 C keeps the house from cooling too far). `touch AWAY` holds this flat
+# setpoint with no price shifting until `rm AWAY`. Put a local return time in the file,
+# e.g. `echo 2026-11-14T18:00 > AWAY`, and normal heating (schedule + price shifting)
+# resumes preheat_hours before it; after the return time the file is ignored.
+# While the units are cooling, away switches them OFF instead, and back on preheat_hours
+# before the return time (or when AWAY is removed). It only switches on units it switched off.
+# No weekday window here, and one flat Poissa temperature at every price: these tests keep the plain
+# flat away; the price floors are tested against config.toml.
+[nobody_home]
+temp = 17.0
+dear_temp = 17.0
+dear_price = 10.0
+bank_price = 0.0
+
+[away]
+preheat_hours = 3.0
+
+# `echo cool > SEASON` (or `--season cool`) makes the controller switch both units to that
+# mode together, with the matching setpoint, at the next run. No SEASON file: the controller
+# follows whatever mode each unit is in. Guards: no switch to cool while the day's outdoor
+# mean is below cool_min_outdoor_mean, and no second switch within min_hours_between_switches.
+[season]
+min_hours_between_switches = 3
+cool_min_outdoor_mean = 8.0
+
+# `touch HOLIDAY` (or put an end date-time in it) uses the weekend heating schedule every
+# day, e.g. for school holidays. Cooling has a flat setpoint and ignores it.
+
+# Sun heats the rooms more directly than the air does. The forecast shortwave radiation
+# (W/m2, clouds included, from Open-Meteo) always lowers the setpoint: when heating, the sun
+# does part of the work; when cooling, the target drops ahead of the heat (cool_lookahead_hours).
+# The effect grows linearly from `low` to `high` W/m2, and is scaled per unit by
+# [units.solar_weight]. Basic version: no sun angle, window orientation or shading.
+[solar]
+enabled = true
+low = 100.0
+high = 500.0
+heat_max_cut = 1.0
+cool_max_boost = 1.0
+cool_lookahead_hours = 1
+
+# Someone is home (sick day, working from home, school closed). `./run.sh --home today` or
+# `--home week` (to the end of Sunday), `--home 2026-11-14T18:00`, `--home off`; or a HOME file,
+# empty or holding an end date-time. It uses the weekend schedule, caps price cuts at max_cut,
+# and in the daytime keeps heating at or above heat_day_floor (cooling at or below
+# cool_day_ceiling). Boosts and pre-heat still apply. Away wins if both are set.
+[home]
+max_cut = 0.5
+day_start = "07:00"
+day_end = "22:00"
+heat_day_floor = 20.0
+cool_day_ceiling = 24.5
+
+[control]
+min_change = 0.5                  # only write if target differs by at least this
+manual_hold_minutes = 60          # a target changed by someone else holds that unit this long (0 = off)
+allowed_modes = ["heat", "cool"]  # pymelcloud names. Not heat_cool (MELCloud "auto"): with one shared outdoor unit the indoor units could disagree
+
+# ---- Cooling (summer) --------------------------------------------------------
+# Applies to units that are in cool mode. One flat setpoint every day: the house is in use
+# all day in the summer, so there is no weekday schedule. Price shifting mirrors heating: cheap
+# hours cool down further (pre-cool), expensive hours let the room drift warmer. Summer
+# prices are much lower than winter ones, so the thresholds are too. FIRST GUESSES: tune
+# them against real summer prices and history.csv.
+[cool]
+temp = 23.0
+
+[cool.limits]
+min_temp = 21.0
+max_temp = 26.0
+extreme_min_temp = 20.0     # reachable only through [cool.extreme]
+extreme_max_temp = 27.0
+step = 0.5
+
+[cool.prices]
+min_hours_available = 20
+cheap_hours = 4
+expensive_hours = 4
+boost = 1.0                 # setpoint lowered this much in the cheapest hours
+cut = 1.0                   # setpoint raised this much in the priciest hours
+cut_deep = 1.5
+cheap_max = 4.0             # c/kWh: pre-cool only if price <= this
+expensive_min = 7.0         # c/kWh: let it drift only if price >= this
+very_expensive = 15.0
+min_spread = 2.0
+
+[cool.extreme]
+cut_price = 12.0
+cut_hours = 6
+cut = 2.0                   # setpoint raised this much (ceiling: extreme_max_temp)
+spike_ratio = 3.0
+spike_min_price = 8.0
+preheat_hours = 2           # pre-cool this long before a spike ...
+preheat_boost = 1.5         # ... by this much (floor: extreme_min_temp)
+
+# Hot days make a shift worth more: x0.5 at 15 C or cooler, x1.5 at 25 C or warmer.
+[cool.weather]
+enabled = true
+scale = [[15.0, 0.5], [25.0, 1.5]]
+
+# Price drift is ignored in a room warmer than room_max; pre-cooling in one cooler than room_min.
+[cool.comfort]
+room_min = 21.5
+room_max = 25.5
+
+[units]
+# Names as printed by --list. Empty list = control every air-to-air unit.
+names = []
+
+# Per-unit offset in C for heating, added after the price shift and before the limits.
+# Warm air rises, so the downstairs unit runs 0.5 C higher. Tune from history.csv
+# (room_temp against the target of each unit). Cooling offsets will be added with cooling.
+[units.offsets]
+"Unit A" = 0.5   # downstairs
+
+# The same for cooling: cold air sinks, so the upstairs unit runs cooler.
+[units.cool_offsets]
+"Unit B" = -0.5  # upstairs
+
+# How strongly each unit's rooms feel the sun, 0 to 1 (missing = 1.0). The upstairs has the large
+# windows. FIRST GUESS: tune from history.csv on sunny days.
+[units.solar_weight]
+"Unit B" = 1.0   # upstairs
+"Unit A" = 0.5   # downstairs
+
+[nudge]
+step = 1.0
+max = 2.0
+hours = 3.0
+
+[normal]
+temp = 21.0
+timeout_hours = 4.0
+fan_full = true
+
+[pause]
+heat_temp = 21.0
+
+[estimate]
+wh_per_degree_quarter = 2.0

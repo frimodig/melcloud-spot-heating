@@ -1,0 +1,51 @@
+# An example config.local.toml for a made-up house, laid over the defaults in config.toml. Copy what
+# fits to config.local.toml (not in git) and change it; anything left out keeps its default.
+# The house: a multi-split with two indoor units, "Hall" (downstairs, by the bedrooms) and
+# "Living room" (upstairs, large windows); empty on weekdays from 08:30 to 16:00.
+
+# What the house ran before the controller, for `--report`.
+[baseline]
+label = "a constant 21.5 C"
+weekday = [["00:00", 21.5]]
+weekend = [["00:00", 21.5]]
+
+[schedule]
+weekday = [
+  ["00:00", 19.0],  # asleep
+  ["05:30", 21.5],  # warm for the morning
+  ["08:30", 19.0],  # empty (see [nobody_home])
+  ["15:00", 20.0],  # someone is back at 16:00
+  ["17:00", 21.5],  # the evening
+  ["22:30", 20.5],  # winding down
+]
+weekend = [
+  ["00:00", 19.0],
+  ["07:00", 21.5],  # a day out is away mode
+  ["22:30", 20.5],
+]
+
+# Where someone is usually home outside the comfort windows: no above-average cut there, and the
+# comfort tiers cap the other cuts. The afternoon one only for the living room unit.
+[above_average]
+keep_weekday = [{from = "16:00", to = "17:00", units = ["Living room"], comfort = true},
+                {from = "22:30", to = "24:00", comfort = true}]
+keep_weekend = [{from = "08:00", to = "24:00", comfort = true}]
+
+# The hall unit is by the bedrooms: at night it follows the price, eases down from 22:00 and stays
+# at or under max_temp.
+[night_shift]
+enabled = true
+units = ["Hall"]
+
+[nobody_home]
+weekday = ["08:30", "16:00"]
+
+[units]
+outdoor_groups = [["Hall", "Living room"]]
+
+[units.cool_offsets]
+"Living room" = -0.5  # upstairs: cold air sinks
+
+[units.solar_weight]
+"Living room" = 1.0   # large windows
+"Hall" = 0.5
