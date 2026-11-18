@@ -179,21 +179,54 @@ async def trigger_run(app_dir: Path) -> Optional[int]:
 RUN_STATES = {0: "done", o.RUN_SKIPPED: "skipped"}
 
 
-async def run_and_report(app: web.Application) -> None:
-    """Run the controller for a change made on the page and keep its outcome for the status, so the
-    page can say whether the units were updated, and draw the new plan at once."""
+# Seconds of quiet after a page action before its run: presses in a row, or a press and its undo,
+# reach MELCloud as one write instead of one each. Presses that keep coming hold it back at most
+# RUN_MAX_WAIT from the first one waiting.
+RUN_DELAY = 5.0
+RUN_MAX_WAIT = 15.0
+
+
+def schedule_run(app: web.Application) -> None:
+    """Run the controller `run_delay` after the last action, so the change reaches the units. Actions
+    while a run is going add one more run after it, not one each."""
     runs = app["runs"]   # one dict changed in place: an app's own keys are fixed once it runs
-    runs["running"] += 1
-    app["plan_cache"].clear()
+    app["plan_cache"].clear()   # the new plan is drawn at once, before the run
+    now = asyncio.get_running_loop().time()
+    if runs["due"] is None:
+        runs["first"] = now
+    runs["due"] = min(now + app["run_delay"], runs["first"] + app["run_max_wait"])
+    if runs["worker"] is None:
+        task = asyncio.ensure_future(run_when_quiet(app))
+        runs["worker"] = task
+        app["tasks"].add(task)  # keep a reference until it finishes
+        task.add_done_callback(app["tasks"].discard)
+
+
+async def run_when_quiet(app: web.Application) -> None:
+    """Wait until `due`, which each action moves later, then run; again if an action came during the run."""
+    runs, loop = app["runs"], asyncio.get_running_loop()
+    try:
+        while runs["due"] is not None:
+            wait = runs["due"] - loop.time()
+            if wait > 0:
+                await asyncio.sleep(wait)
+                continue
+            runs["due"] = None
+            await run_and_report(app)
+    finally:
+        runs["worker"] = None
+
+
+async def run_and_report(app: web.Application) -> None:
+    """Run the controller for changes made on the page and keep its outcome for the status, so the
+    page can say whether the units were updated."""
     try:
         code = await app["trigger"](app["app_dir"])
         state = RUN_STATES.get(code, "failed") if code is not None else "done"
     except Exception:
         log.exception("controller run for a page action failed to start")
         state = "failed"
-    finally:
-        runs["running"] -= 1
-    runs["last"] = {"state": state, "at": datetime.now(o.ZoneInfo(app["cfg"]["timezone"])).isoformat(timespec="seconds")}
+    app["runs"]["last"] = {"state": state, "at": datetime.now(o.ZoneInfo(app["cfg"]["timezone"])).isoformat(timespec="seconds")}
     app["plan_cache"].clear()
 
 
@@ -298,7 +331,7 @@ async def status(request: web.Request) -> web.Response:
     now = datetime.now(o.ZoneInfo(app["cfg"]["timezone"]))
     data = build_status(app["cfg"], now, app["app_dir"])
     data["user"] = request["nick"]
-    data["run"] = {"state": "running"} if app["runs"]["running"] else app["runs"]["last"]
+    data["run"] = {"state": "running"} if app["runs"]["worker"] else app["runs"]["last"]   # waiting counts too
     data["plan"] = await plan_data(app)
     if data["plan"]:
         data["plan"] = {**data["plan"], "room": room_series(app["cfg"], now, app["app_dir"], data["plan"]["times"])}
@@ -625,9 +658,7 @@ async def act(request: web.Request) -> web.Response:
         log.info("user=%s action=%s value=%s refused", request["nick"], action, str(value)[:40])
         return web.json_response({"error": str(exc)}, status=400)
     log.info("user=%s action=%s value=%s ok", request["nick"], action, value)
-    task = asyncio.ensure_future(run_and_report(app))
-    app["tasks"].add(task)  # keep a reference until it finishes
-    task.add_done_callback(app["tasks"].discard)
+    schedule_run(app)
     return web.json_response({"message": message})
 
 
@@ -650,10 +681,12 @@ async def set_language(request: web.Request) -> web.Response:
     return web.json_response({"language": language})
 
 
-def make_app(cfg: dict, users: Dict[str, str], app_dir: Path = o.APP_DIR, trigger=trigger_run) -> web.Application:
+def make_app(cfg: dict, users: Dict[str, str], app_dir: Path = o.APP_DIR, trigger=trigger_run,
+             run_delay: float = RUN_DELAY, run_max_wait: float = RUN_MAX_WAIT) -> web.Application:
     app = web.Application(middlewares=[guard])
-    app.update(cfg=cfg, users=users, app_dir=app_dir, trigger=trigger, tasks=set(), plan_cache={},
-               runs={"running": 0, "last": None}, plan_runs={})
+    app.update(cfg=cfg, users=users, app_dir=app_dir, trigger=trigger, run_delay=run_delay,
+               run_max_wait=run_max_wait, tasks=set(), plan_cache={},
+               runs={"due": None, "first": None, "worker": None, "last": None}, plan_runs={})
     app.add_routes([web.get("/", page), web.get("/manifest.json", manifest),
                     web.get("/api/status", status), web.post("/api/action", act),
                     web.post("/api/language", set_language)])

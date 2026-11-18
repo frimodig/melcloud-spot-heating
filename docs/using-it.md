@@ -40,8 +40,9 @@ chart sits beside the controls.
 - **Cheapest 3 hours** (for the laundry and the like) looks only in the hours someone is usually home
   (`[web] home_hours_weekday` 17-24, `home_hours_weekend` 07-24; the length is `cheapest_hours`),
   and compares today with tomorrow once tomorrow's prices are out.
-- **After a button** the page says how the run went: units updated, delayed because another run was
-  writing (the change then applies at the next run), or failed.
+- **After a button** the page says how the run went, once it has run (5 seconds or more after the
+  press): units updated, delayed because another run was writing (the change then applies at the
+  next run), or failed.
 
 The page is in English, or Finnish with `[web] language = "fi"` as the server default. The button in the header
 switches it for you only, and the choice sticks to your login on every device. It only writes the control files
@@ -137,9 +138,11 @@ remove the controller entirely, delete its cron line.
 
 ## How a change reaches the units
 
-A button writes its file and starts a run. A command (`--control`) only writes the file, and the next
-cron run applies it. A run takes an exclusive lock, so two runs
-never write to the units at once: cron skips its run while another is going, and a run started from
-the page waits up to 3 minutes (`--lock-wait 180`). A run that waited but wrote nothing (the lock
+A button writes its file at once and starts a run 5 seconds after the last press (at most 15 seconds
+after the first), so presses in a row, or a press and its undo, reach the units as one write. Presses
+during a run add one more run after it.
+A command (`--control`) only writes the file, and the next cron run applies it. A run takes an
+exclusive lock, so two runs never write to the units at once: cron skips its run while another is
+going, and a run started from the page waits up to 3 minutes (`--lock-wait 180`). A run that waited but wrote nothing (the lock
 stayed taken, the controller is paused, or the circuit breaker is open after repeated failures) exits with code 75, which is how the
 page knows the change will apply at the next run.

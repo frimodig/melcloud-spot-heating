@@ -25,9 +25,9 @@ def rows_of(day="2026-11-10", price=5.0, final=20.0, **extra):
             for h in range(24) for m in (0, 15, 30, 45)]
 
 
-def client(fn, tmp_path, trigger):
+def client(fn, tmp_path, trigger, run_delay=0.0, run_max_wait=60.0):
     async def main():
-        app = web.make_app(CFG, {"me@example.com": "Anna"}, tmp_path, trigger)
+        app = web.make_app(CFG, {"me@example.com": "Anna"}, tmp_path, trigger, run_delay, run_max_wait)
         async with TestClient(TestServer(app)) as c:
             return await fn(c, app)
     saved = web.plan_data
@@ -74,6 +74,129 @@ def test_a_run_that_could_not_get_the_lock_is_reported_as_skipped(tmp_path):
 
 def test_a_failed_run_is_reported(tmp_path):
     assert run_outcome(tmp_path, 1)[1]["state"] == "failed"
+
+
+async def until(condition, seconds=5.0):
+    """Wait for `condition()` to hold: the runs start on timers."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + seconds
+    while not condition():
+        assert loop.time() < deadline, "timed out"
+        await asyncio.sleep(0.01)
+
+
+def press(c, value):
+    return c.post("/api/action", json={"action": "nudge", "value": value}, headers=POST)
+
+
+async def run_state(c):
+    return (await (await c.get("/api/status", headers=ME)).json())["run"]
+
+
+def test_presses_in_a_row_start_one_run_after_the_last(tmp_path):
+    started = []
+
+    async def trigger(app_dir):
+        started.append(asyncio.get_running_loop().time())
+        return 0
+
+    async def go(c, app):
+        await press(c, "warmer")
+        await press(c, "warmer")
+        await asyncio.sleep(0.3)
+        before_undo = asyncio.get_running_loop().time()
+        await press(c, "cooler")                                        # an undo inside the window
+        waiting, ran_early = await run_state(c), list(started)
+        await until(lambda: started)
+        await asyncio.sleep(0.8)                                        # longer than the window: nothing follows
+        return waiting, ran_early, before_undo, started, await run_state(c)
+    waiting, ran_early, before_undo, started, done = client(go, tmp_path, trigger, run_delay=0.6)
+    assert waiting == {"state": "running"} and ran_early == []          # shown as updating while it waits
+    assert len(started) == 1 and started[0] >= before_undo + 0.6        # the undo moved the run, too
+    assert done["state"] == "done"
+
+
+def test_presses_that_keep_coming_hold_the_run_back_only_so_long(tmp_path):
+    started = []
+
+    async def trigger(app_dir):
+        started.append(asyncio.get_running_loop().time())
+        return 0
+
+    async def go(c, app):
+        loop = asyncio.get_running_loop()
+        first_press = loop.time()
+        while loop.time() < first_press + 2.0:                           # a press every 0.2 s, never 0.5 s quiet
+            await press(c, "warmer" if len(started) % 2 else "cooler")
+            await asyncio.sleep(0.2)
+        return first_press, started
+    first_press, started = client(go, tmp_path, trigger, run_delay=0.5, run_max_wait=1.0)
+    assert started and first_press + 1.0 <= started[0] < first_press + 1.5
+
+
+def test_presses_during_a_run_add_one_more_run_not_one_each(tmp_path):
+    started, gate = [], {}
+
+    async def trigger(app_dir):
+        started.append(1)
+        if len(started) == 1:
+            await gate["open"].wait()                                   # the first run is still writing
+        return 0
+
+    async def go(c, app):
+        gate["open"] = asyncio.Event()
+        await press(c, "warmer")
+        await until(lambda: started)
+        for value in ("warmer", "cooler", "cooler"):
+            await press(c, value)
+        await asyncio.sleep(0.3)                                        # past the window, the run still going
+        during = len(started)
+        gate["open"].set()
+        await until(lambda: len(started) == 2)
+        await asyncio.sleep(0.3)
+        return during, len(started), await run_state(c)
+    during, runs, done = client(go, tmp_path, trigger, run_delay=0.05)
+    assert during == 1                                                  # the next run waits for this one to end
+    assert runs == 2 and done["state"] == "done"
+
+
+def test_a_later_burst_waits_its_own_window(tmp_path):
+    started = []
+
+    async def trigger(app_dir):
+        started.append(asyncio.get_running_loop().time())
+        return 0
+
+    async def go(c, app):
+        await press(c, "warmer")
+        await until(lambda: started)
+        await asyncio.sleep(0.6)                                        # past the longest wait of the first burst
+        before = asyncio.get_running_loop().time()
+        await press(c, "cooler")
+        await until(lambda: len(started) == 2)
+        return before, started
+    before, started = client(go, tmp_path, trigger, run_delay=0.3, run_max_wait=0.5)
+    assert started[1] >= before + 0.3
+
+
+def test_a_run_that_cannot_start_is_reported_and_the_next_press_runs_again(tmp_path):
+    calls = []
+
+    async def trigger(app_dir):
+        calls.append(1)
+        if len(calls) == 1:
+            raise OSError("run.sh is missing")
+        return 0
+
+    async def go(c, app):
+        await press(c, "warmer")
+        await until(lambda: app["runs"]["last"])
+        failed = await run_state(c)
+        await press(c, "cooler")
+        await until(lambda: len(calls) == 2 and app["runs"]["last"]["state"] == "done")
+        return failed, await run_state(c)
+    failed, done = client(go, tmp_path, trigger, run_delay=0.05)
+    assert failed["state"] == "failed" and done["state"] == "done"      # the page is not stuck on updating
 
 
 def test_a_page_run_that_gives_up_on_the_lock_exits_with_its_own_code(monkeypatch):

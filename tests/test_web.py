@@ -18,7 +18,7 @@ ME = {web.USER_HEADER: "me@example.com"}
 POST = {**ME, web.CSRF_HEADER: web.CSRF_VALUE}
 
 
-def with_client(fn, tmp_path, users=None):
+def with_client(fn, tmp_path, users=None, run_delay=0.0):
     """Run `fn(client, runs)` against the page with a fake controller trigger."""
     runs = []
 
@@ -26,7 +26,7 @@ def with_client(fn, tmp_path, users=None):
         runs.append(app_dir)
 
     async def main():
-        app = web.make_app(CFG, users or {"me@example.com": "Anna"}, tmp_path, fake_trigger)
+        app = web.make_app(CFG, users or {"me@example.com": "Anna"}, tmp_path, fake_trigger, run_delay)
 
         async def no_plan(a, day_offset=0):
             return None
@@ -93,9 +93,9 @@ def test_actions_write_the_files_and_start_a_run(tmp_path):
         assert (await post(c, "away", "on")).status == 200 and o.AWAY_FILE.exists()
         assert (await post(c, "away", "off")).status == 200 and not o.AWAY_FILE.exists()
         assert (await post(c, "home", "today")).status == 200 and o.HOME_FILE.exists()
-        await asyncio.sleep(0)
-        assert len(runs) == 4
-    with_client(go, tmp_path)
+        await asyncio.sleep(1.0)
+        assert len(runs) == 1                                           # one run for the whole burst
+    with_client(go, tmp_path, run_delay=0.5)
 
 
 def test_away_and_home_take_a_future_time_only(tmp_path):
@@ -251,9 +251,9 @@ def test_normal_now_needs_confirmation_and_shows_in_the_status(tmp_path):
         assert j["normal"]["on"] is True and j["normal"]["temp"] == 21.0 and j["normal"]["until"]
         assert (await post(c, "normal", "off")).status == 200 and not o.NORMAL_FILE.exists()   # cancel: no confirm
         assert (await post(c, "normal", "maybe", confirm=True)).status == 400
-        await asyncio.sleep(0)
-        assert len(runs) == 2
-    with_client(go, tmp_path)
+        await asyncio.sleep(1.0)
+        assert len(runs) == 1
+    with_client(go, tmp_path, run_delay=0.5)
 
 
 def test_the_page_has_the_normal_now_button_in_finnish(tmp_path):
