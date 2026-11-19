@@ -20,6 +20,10 @@ read is ignored and the error logged, so a typo can't leave the house cold or st
 
 ## The phone page
 
+![The phone page with made-up prices and units](phone-page.png)
+
+*Made-up data; `.venv/bin/python scripts/phone-screenshot.py` redraws it after a page change.*
+
 The page shows the price now (large) with the reason for the current setting, each unit's room and
 target temperature, the outdoor temperature with a weather symbol, and a chart of the day: the price
 (grey), the target (a line in the frame's colour) with the pre-heat and saving stretches shaded, the
