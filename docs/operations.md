@@ -34,7 +34,7 @@ The history's action is `set`, `keep`, `skip`, `dry-run`, `hold`, `set-failed`, 
 `normal-end` or `normal-failed`. With each quarter's room temperature in the next row, it
 shows whether a cut was felt. The telemetry is for working out how fast the rooms cool and heat:
 `fan_actual` 0 means the fan was stopped, so idle stretches can be told from heating ones. The
-energy meter (`energy_kwh`) updates every 1.5 to 3 hours and exists only on some units
+energy meter (`energy_kwh`) updates at the pump's own pace (one unit's meter changes every 15-30 minutes in 0.1 kWh steps, another's about once a day) and exists only on some units
 (`./run.sh --list` shows `energy_meter`).
 
 ## When something fails

@@ -2953,7 +2953,7 @@ def load_telemetry(app_dir: Path, cfg: dict):
 def meter_energy_points(readings: List[Tuple[datetime, float]]) -> List[Tuple[datetime, float]]:
     """Cumulative energy (kWh since the first reading) at each moment the meter's value CHANGED.
 
-    The meter updates only every 1.5 to 3 hours, so only the changes carry information; a drop in
+    The meter updates at the pump's own pace (every 15 minutes to about daily, in 0.1 kWh steps), so only the changes carry information; a drop in
     the value (a reset) adds nothing and the count continues from the new value."""
     points: List[Tuple[datetime, float]] = []
     last, total = None, 0.0
@@ -3146,7 +3146,7 @@ def energy_report(app_dir: Path, cfg: dict, month: str = "") -> Optional[str]:
         + (f"; the days stray {model.spread_pct:.0f}% from the fit." if model.spread_pct is not None
            else "; too few days to judge the fit."),
         "The model takes heat demand as (setpoint - outdoor) and has no thermal memory or efficiency curve;",
-        "'measured' is the meters spread over the quarter hours they cover (they update every 1.5 to 3 h).",
+        "'measured' is the meters spread over the quarter hours they cover (they update every 15 min to about daily).",
         "Saved = baseline - actual, both from the model; positive = cheaper than the baseline.", ""]
     months: Dict[str, EnergyDay] = {}
     for d, s in sorted(days.items()):
