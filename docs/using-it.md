@@ -24,7 +24,7 @@ read is ignored and the error logged, so a typo can't leave the house cold or st
 
 *Made-up data; `.venv/bin/python scripts/phone-screenshot.py` redraws it after a page change.*
 
-The page shows the price now (large) with the reason for the current setting, each unit's room and
+The page shows the price now (large), with the price of heat under the average when [`[cop]`](configuration.md#the-price-of-heat-cop) is on, with the reason for the current setting, each unit's room and
 target temperature, the outdoor temperature with a weather symbol, and a chart of the day: the price
 (grey), the target (a line in the frame's colour) with the pre-heat and saving stretches shaded, the
 measured room temperature so far (dashed), a "now" line, and a strip with the outdoor temperature and the weather. Once tomorrow's prices are out
