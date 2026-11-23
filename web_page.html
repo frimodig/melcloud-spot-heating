@@ -54,16 +54,16 @@
   .card { background: var(--surface); border-radius: 24px; padding: 18px; box-shadow: var(--shadow); }
   .label { color: var(--muted); font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
 
-  /* the price keeps its width and never breaks; the chips beside it wrap instead (two chips on a phone) */
+  /* the price keeps its width and never breaks; the chips stack in the column beside it */
   .hero { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; align-items: end; }
   .price { white-space: nowrap; font-size: 3.3rem; font-weight: 750; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
   .price small { font-size: 1rem; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 2px; }
-  .target { text-align: right; }
+  .target { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
   .cheap3 { margin-top: 10px; font-weight: 600; } .cheap3:empty { display: none; }
   .avg { color: var(--muted); font-size: .9rem; margin-top: 6px; } .avg b { color: var(--ink); font-variant-numeric: tabular-nums; }
   .sym { font-size: 1.15rem; vertical-align: -2px; }
   .out { color: var(--muted); font-size: .9rem; margin-top: 6px; } .out b { color: var(--ink); font-variant-numeric: tabular-nums; }
-  .pill { display: inline-block; white-space: nowrap; padding: 3px 11px; border-radius: 999px; font-size: .8rem; font-weight: 700; color: #fff; background: var(--off); vertical-align: 3px; }
+  .pill { display: inline-block; white-space: nowrap; padding: 3px 10px; border: 1.5px solid transparent; border-radius: 999px; font-size: .78rem; font-weight: 700; color: #fff; background: var(--off); vertical-align: 3px; }
   .pill.cheap { background: var(--ok); } .pill.expensive { background: var(--warn); }
   .pill.extreme, .pill.peak { background: var(--bad); } .pill.spike, .pill.dear_quarter, .pill.above_average { background: var(--warn); }
   .why { grid-column: 1 / -1; margin-top: 10px; font-weight: 600; }
@@ -73,7 +73,7 @@
   .chip.cool { border-color: var(--cool); background: color-mix(in srgb, var(--cool) 16%, transparent); }
   .chip.good { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, transparent); }
   .cheap3 .chip { margin-left: 2px; }
-  .target .chip { margin-right: 6px; }
+  .target .out { margin-top: 0; }
   .ov + .ov { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
   .ov-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; }
   .ov-what { font-weight: 600; }
@@ -147,7 +147,7 @@
 
   /* The smallest phones: the chips and the outdoor temperature under the price. */
   @media (max-width: 359px) {
-    .hero { grid-template-columns: minmax(0, 1fr); } .target { text-align: left; }
+    .hero { grid-template-columns: minmax(0, 1fr); } .target { align-items: flex-start; }
   }
 
   /* Portrait tablets: one column, wider, the buttons three to a row. */
