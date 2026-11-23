@@ -7,8 +7,8 @@ line and a hand-written file all do the same thing.
 | Control | Phone page | Command | File |
 |---|---|---|---|
 | Too cold / too hot for a few hours | Too cold, Too hot | `--control nudge warmer\|cooler\|longer\|reset` | `NUDGE` |
-| Everyone out | Away | `--control away on\|off\|<return time>` | `AWAY` |
-| Someone home on a weekday | Home | `--home today\|week\|<end time>\|off` | `HOME` |
+| Everyone out | Away (the switch) | `--control away on\|off\|<return time>` | `AWAY` |
+| Someone home on a weekday | Home (the switch) | `--home today\|week\|<end time>\|off` | `HOME` |
 | Holiday schedule | (use Home) | `--control holiday on\|off\|<end time>` | `HOLIDAY` |
 | Heating or cooling | Season | `--season heat\|cool` | `SEASON` |
 | Normal heat right now | Normal heat now | `--control normal on\|off` | `NORMAL` |
@@ -63,6 +63,19 @@ Each press is one step (`[nudge] step`, 1 C) for 3 hours from the last press (`h
   no more. While away it lifts the away temperature toward the plan.
 - **Too hot** takes back a raise, then a lift, then lowers the plan, down to 2 C under it.
 - **+1 h** adds an hour; **Cancel now** returns to the plan straight away.
+
+## Away, Normal, Home
+
+On the page these are one three-position switch: **Away**, **Normal** (the default, the plan as it is) and
+**Home**. It shows where you are, and a press moves you:
+
+- **Away** opens the return time. Already away, it opens the return time again, set to the next quarter
+  hour, so changing it takes one press. Away replaces Home.
+- **Home** asks for how long (today, the week or an end time).
+- **Normal** from Home ends Home at once.
+- **Leaving Away**, with Normal or Home, is "I am on my way": the return time is set 30 minutes ahead
+  and the house starts warming up now, so it is warm when you arrive. Home then applies once away has
+  ended. A return time that is already sooner stays.
 
 ## Away
 

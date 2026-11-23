@@ -376,3 +376,39 @@ def test_the_login_header_is_a_setting(tmp_path):
         with_client(go, tmp_path)
     finally:
         CFG = saved
+
+
+def test_away_clears_home_and_leaving_away_returns_in_half_an_hour(tmp_path):
+    """The page's switch holds one of Away, Normal and Home. Out of Away, to either of the others, the
+    return time is 30 minutes ahead (the warm-up before a return time heats the house in them)."""
+    async def go(c, runs):
+        await post(c, "home", "today")
+        assert (await post(c, "away", "2099-01-01T10:00")).status == 200 and not o.HOME_FILE.exists()   # Away replaces Home
+        before = datetime.now(TZ)
+        assert (await post(c, "away", "return")).status == 200                                          # Away to Normal
+        until = o.load_away(o.AWAY_FILE, TZ).until
+        assert 29 <= (until - before).total_seconds() / 60 <= 31 and not o.HOME_FILE.exists()
+    with_client(go, tmp_path)
+
+
+def test_home_from_away_warms_up_first_and_then_home_applies(tmp_path):
+    async def go(c, runs):
+        await post(c, "away", "on")
+        r = await post(c, "home", "today")
+        assert r.status == 200 and (await r.json())["message"] == FI["home_after_warmup"]
+        assert o.HOME_FILE.exists()                                                  # Home applies when away has ended
+        assert o.load_away(o.AWAY_FILE, TZ).until is not None                        # away ends in the warm-up's time
+        await post(c, "away", "off")
+        assert (await (await post(c, "home", "today")).json())["message"] == FI["home_mode_on"]   # no away: no warm-up
+    with_client(go, tmp_path)
+
+
+def test_a_return_that_is_already_sooner_than_the_warmup_stays(tmp_path):
+    async def go(c, runs):
+        soon = (datetime.now(TZ) + web.timedelta(minutes=10)).replace(tzinfo=None).isoformat(timespec="minutes")
+        await post(c, "away", soon)
+        await post(c, "away", "return")
+        assert o.load_away(o.AWAY_FILE, TZ).until.replace(tzinfo=None).isoformat(timespec="minutes") == soon
+        await post(c, "away", "off")
+        assert (await post(c, "away", "return")).status == 200 and not o.AWAY_FILE.exists()   # nothing to return from
+    with_client(go, tmp_path)

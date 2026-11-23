@@ -128,6 +128,10 @@
   }
   button.act:active { transform: scale(.97); }
   button.act small { display: block; overflow-wrap: anywhere; line-height: 1.25; font-weight: 500; opacity: .7; font-size: .76rem; margin-top: 1px; }
+  .presence { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 22px; background: var(--tonal); }
+  .presence button { all: unset; box-sizing: border-box; cursor: pointer; min-height: 48px; padding: 8px 6px; border-radius: 18px; display: flex; align-items: center; justify-content: center; text-align: center; font-weight: 650; color: var(--muted); }
+  .presence button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+  .presence button:focus-visible { outline: 2px solid var(--frame); }
   button.warm { background: var(--heat); color: #fff; } button.coolb { background: var(--cool); color: #fff; }
   button.wide { grid-column: 1 / -1; }
   button.ghost { background: transparent; border: 2px solid var(--frame); color: var(--ink); }
@@ -198,8 +202,11 @@
   <section class="grid" id="controls">
     <button class="act warm" id="cold">{{too_cold}}<small>{{too_cold_sub}}</small></button>
     <button class="act coolb" id="hot">{{too_hot}}<small>{{too_hot_sub}}</small></button>
-    <button class="act" id="away">{{away}}<small id="awayState"></small></button>
-    <button class="act" id="home">{{home}}<small id="homeState"></small></button>
+    <div class="presence" role="group" aria-label="{{presence}}">
+      <button id="away">{{away}}</button>
+      <button id="normalSchedule">{{presence_normal}}</button>
+      <button id="home">{{home}}</button>
+    </div>
     <button class="act" id="season">{{season}}<small id="seasonState"></small></button>
     <button class="act" id="pause">{{control}}<small id="pauseState"></small></button>
     <button class="act wide ghost" id="normal">{{normal_now}}<small id="normalState"></small></button>
@@ -231,8 +238,7 @@
   <div class="stack">
     <label for="awayUntil">{{return_time}}</label><input type="datetime-local" id="awayUntil">
     <button data-go="away" data-v="until">{{set_return_time}}</button>
-    <button data-go="away" data-v="on">{{away_no_time}}</button>
-    <button data-go="away" data-v="off" class="tonal" id="awayOff">{{end_away}}</button>
+    <button data-go="away" data-v="on" id="awayNoTime">{{away_no_time}}</button>
     <button class="tonal" data-close>{{cancel}}</button>
   </div></dialog>
 
@@ -243,7 +249,6 @@
     <button data-go="home" data-v="week">{{until_end_of_week}}</button>
     <label for="homeUntil">{{or_until}}</label><input type="datetime-local" id="homeUntil">
     <button data-go="home" data-v="until" class="tonal">{{set_end_time}}</button>
-    <button data-go="home" data-v="off" class="tonal">{{home_off}}</button>
     <button class="tonal" data-close>{{cancel}}</button>
   </div></dialog>
 
@@ -377,8 +382,9 @@ function render(s) {
     `<div class="tgt">${fill(T.unit_target, {value: fmt(u.target)})}</div>` +
     (u.guarded ? `<div class="guard">${T.note_comfort_guard}</div>` : "") + `</div>`).join("")
     : `<div class="unit">${T.no_unit_data}</div>`;
-  $("awayState").textContent = s.away.on ? (s.away.until ? fill(T.away_state_until, {when: when(s.away.until)}) : T.state_on) : "";
-  $("homeState").textContent = s.home.on ? (s.home.until ? fill(T.home_state_until, {when: when(s.home.until)}) : T.state_on) : "";
+  const where = s.away.on ? "away" : s.home.on ? "home" : "normal";   // the switch shows one of the three
+  for (const [id, key] of [["away", "away"], ["normalSchedule", "normal"], ["home", "home"]])
+    $(id).setAttribute("aria-pressed", String(where === key));
   $("seasonState").textContent = s.season === "cool" ? T.season_cooling : s.season_set ? T.season_heating : T.season_heating_default;
   $("normalState").textContent = s.normal.on
     ? fill(T.normal_state_on, {temp: fmt(s.normal.temp), when: when(s.normal.until)})
@@ -558,7 +564,20 @@ $("tabToday").onclick = () => { day = "today"; renderChart(); };
 $("tabTomorrow").onclick = () => { day = "tomorrow"; renderChart(); };
 $("cold").onclick = () => send("nudge", "warmer");
 $("hot").onclick = () => send("nudge", "cooler");
-$("away").onclick = () => { $("awayOff").hidden = !(state && state.away.on); $("dAway").showModal(); };
+function nextQuarter() {                                   // now rounded up, in the datetime-local format
+  const d = new Date((Math.floor(Date.now() / 9e5) + 1) * 9e5), p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+$("away").onclick = () => {
+  const on = !!(state && state.away.on);                 // already away: only the return time is left to set
+  $("awayNoTime").hidden = on;
+  $("awayUntil").value = on ? nextQuarter() : "";
+  $("dAway").showModal();
+};
+$("normalSchedule").onclick = () => {                    // out of Away the house warms up first (the server does it)
+  if (state && state.away.on) send("away", "return");
+  else if (state && state.home.on) send("home", "off");
+};
 $("normal").onclick = () => state && state.normal.on
   ? send("normal", "off")
   : confirmThen(T.confirm_normal_title,

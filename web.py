@@ -108,6 +108,27 @@ def future_time(value: str, tz, now: datetime, t: dict) -> datetime:
     return until
 
 
+RETURN_WARMUP = timedelta(minutes=30)   # the page's way out of Away: the return is this far ahead
+
+
+def away_holds(tz, now: datetime) -> bool:
+    present, until = o.read_until_file(o.AWAY_FILE, "AWAY", tz)
+    return present and (until is None or until > now)
+
+
+def return_from_away(tz, now: datetime, cfg: dict, t: dict) -> str:
+    """Away to Normal or Home: the return time becomes now + RETURN_WARMUP, so the house warms up before
+    the absence ends (the warm-up before a return time does it). A return that is already sooner stays."""
+    if not away_holds(tz, now):
+        return t["away_ended"]
+    until = now + RETURN_WARMUP
+    _, current = o.read_until_file(o.AWAY_FILE, "AWAY", tz)
+    if current is not None and current < until:
+        return t["away_returning"]
+    quiet(o.set_control, "away", until.astimezone(tz).replace(tzinfo=None).isoformat(timespec="minutes"), tz, cfg)
+    return t["away_returning"]
+
+
 def do_action(action: str, value: str, confirm: bool, cfg: dict, now: datetime) -> str:
     tz = o.ZoneInfo(cfg["timezone"])
     t = text(cfg)
@@ -131,15 +152,22 @@ def do_action(action: str, value: str, confirm: bool, cfg: dict, now: datetime) 
             return t["nudge_at_max"].format(total=f"{after.floor + after.shift:g}")
         return t[f"nudge_{value}"]
     if action == "away":
+        if value == "return":
+            return return_from_away(tz, now, cfg, t)
         if value not in ("on", "off"):
             future_time(value, tz, now, t)
         quiet(o.set_control, "away", value, tz, cfg)
+        if value != "off":
+            o.HOME_FILE.unlink(missing_ok=True)   # the page's switch holds one of Away, Normal and Home
         return t["away_ended"] if value == "off" else t["away_on"]
     if action == "home":
         if value not in ("today", "week", "off"):
             future_time(value, tz, now, t)
         if quiet(o.set_home, value, tz, now):
             raise Refused(t["bad_request"])
+        if value != "off" and away_holds(tz, now):
+            return_from_away(tz, now, cfg, t)   # Home from Away: the house warms up first
+            return t["home_after_warmup"]
         return t["home_mode_off"] if value == "off" else t["home_mode_on"]
     if action == "season":
         if value not in ("heat", "cool"):

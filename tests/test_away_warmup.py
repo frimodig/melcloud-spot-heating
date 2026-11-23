@@ -193,3 +193,13 @@ def test_the_end_of_normal_now_keeps_a_started_warm_up(tmp_path):
     state.data["normal"] = {"id": "x", "mode": "heat", "temp": 21.0}   # normal now has just been reached
     asyncio.run(o.apply_to_units([unit], at(17, 15), prices({}), CFG, False, 5.0, None, away, state, "heat"))
     assert unit.target_temperature > 17.0
+
+
+def test_a_return_half_an_hour_ahead_heats_from_the_first_run():
+    """The page's way out of Away ('I am on my way'): the return is set 30 minutes ahead, and the house
+    heats at once, whatever the prices before and after, not at the floor until a cheap quarter."""
+    now = at(17)
+    for cheap in ({}, {k: 2.0 for k in range(60, 66)}, {k: 2.0 for k in range(69, 72)}):
+        away = o.Away(now + timedelta(minutes=30), now - timedelta(hours=8))
+        final = o.desired_setpoint(now, prices(cheap), CFG, away=away, room_temp=18.0)[2]
+        assert final > CFG["nobody_home"]["temp"], cheap
