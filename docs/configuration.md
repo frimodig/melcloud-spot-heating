@@ -103,6 +103,30 @@ To change one, put it in `config.local.toml` under its section, for example `[pr
 Cooling has its own, lower thresholds (`[cool.prices]`, `[cool.extreme]`), since summer prices are
 far lower. The temperatures the rules may reach are settings too: `[limits]` and `[cool.limits]`.
 
+### The price of heat (`[cop]`)
+
+Off by default. With `[cop] enabled = true` the cheap, dear, spike, above-average, pre-heat and night
+rules judge what a kWh of *heat* costs, not of electricity: each quarter's spot price is multiplied by
+the COP at `reference_c` (default 0 C) and divided by the COP at that quarter's forecast outdoor
+temperature, so cold quarters count as dearer and mild ones as cheaper, and the thresholds above keep
+their meaning at the reference temperature. `points` are `[outdoor C, COP]` pairs, interpolated and held
+flat beyond the ends. The defaults are one pump's (the Mitsubishi Electric MXZ-2F53VFH4, below):
+replace them with your pump's, or leave `[cop]` off. Without the weather forecast the spot price is used.
+
+The minimum and comfort rules are not touched: the comfort windows' tiers, the nobody-home floors, the
+limits and the room guard never look at the COP, so the COP changes when heat is bought, not how
+warm the rooms may get. The page, the history file and the reports keep the spot price; the page adds
+a "price of heat" line.
+
+Sources: the points come from Mitsubishi Electric's technical manual OBH790P (the MXZ-2F53VF4/VFH4
+heating capacity and total input correction curves, p. 123, and the rated COP 4.10 at 7 C outdoor, p. 122),
+read off the charts at full load, so with no defrost and no part-load gain; the wet bulb of the curves is read
+as dry bulb less 1 C. The idea of a COP that depends on the outdoor temperature is common to
+open-source tools, which we read for background and copied nothing from:
+[hplib](https://github.com/FZJ-IEK3-VSA/hplib) (a linear regression of the COP on temperatures, fitted to
+Keymark certification data) and the Home Assistant integration
+[heating_curve_optimizer](https://bvweerd.github.io/heating_curve_optimizer/algorithm/cop-calculation/).
+
 ## Language and time
 
 The phone page is in English, or Finnish with `[web] language = "fi"`. That is the server's default: each

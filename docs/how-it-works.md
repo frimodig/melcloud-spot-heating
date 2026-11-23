@@ -62,6 +62,12 @@ location ([configuration](configuration.md#credentials-and-location-env)).
 `--plan --outdoor-temp -15` previews a temperature offline (with the location set, as `./run.sh`
 does from `.env`).
 
+**The price of heat** (`[cop]`, off by default). The rules above can judge the price of a kWh of heat
+instead of a kWh of electricity: the spot price scaled by how much worse the COP is at the forecast
+outdoor temperature than at 0 C. It moves which quarters count as cheap or dear, and nothing else: the
+comfort windows' tiers, the nobody-home floors and the limits stay on the spot price and the room guard on
+the room. See [configuration](configuration.md#the-price-of-heat-cop).
+
 ## While people are home
 
 **Comfort windows** (`[comfort_windows]`; by default 06-08 and 18-22 on weekdays, 07-12 and 17-22

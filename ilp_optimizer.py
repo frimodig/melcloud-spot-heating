@@ -19,7 +19,7 @@ import statistics
 import sys
 import time as time_module
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
@@ -334,10 +334,20 @@ def night_max_temp(local: datetime, cfg: dict, holiday: bool, unit: Optional[str
 
 
 def price_at(prices: Optional[List["PriceInterval"]], now: datetime) -> Optional[float]:
+    """The price the rules judge at `now`: the heat price when [cop] is on (heat_prices), else the spot price."""
     now_utc = now.astimezone(timezone.utc)
     for i in prices or []:
         if i.start <= now_utc < i.end:
             return i.price
+    return None
+
+
+def spot_price_at(prices: Optional[List["PriceInterval"]], now: datetime) -> Optional[float]:
+    """The spot price at `now`, as billed: for the page, the history file and the reports."""
+    now_utc = now.astimezone(timezone.utc)
+    for i in prices or []:
+        if i.start <= now_utc < i.end:
+            return i.spot_price
     return None
 
 
@@ -349,7 +359,12 @@ def price_at(prices: Optional[List["PriceInterval"]], now: datetime) -> Optional
 class PriceInterval:
     start: datetime  # aware, UTC
     end: datetime
-    price: float  # c/kWh
+    price: float  # c/kWh; what the rules judge: the spot price, or the heat price when [cop] is on
+    spot: Optional[float] = None  # the spot price when `price` was changed by heat_prices
+
+    @property
+    def spot_price(self) -> float:
+        return self.price if self.spot is None else self.spot
 
     @property
     def seconds(self) -> float:
@@ -426,6 +441,36 @@ def price_sources(cfg: dict) -> List[str]:
     """[prices] sources in priority order; an older config's single `source` still works."""
     pc = cfg["prices"]
     return list(pc.get("sources") or [pc.get("source", "porssisahko")])
+
+
+def cop_at(cop: dict, temp: float) -> float:
+    """The heat pump's COP at an outdoor temperature (C): [cop] `points` as [temperature, COP] pairs,
+    interpolated between them and held flat beyond the first and last."""
+    pts = sorted((float(t), float(c)) for t, c in cop["points"])
+    if temp <= pts[0][0]:
+        return pts[0][1]
+    for (t0, c0), (t1, c1) in zip(pts, pts[1:]):
+        if temp <= t1:
+            return c0 + (c1 - c0) * (temp - t0) / (t1 - t0)
+    return pts[-1][1]
+
+
+def heat_prices(prices: Optional[List[PriceInterval]], outdoor, cfg: dict) -> Optional[List[PriceInterval]]:
+    """The prices as the rules should judge them when [cop] is on: what a kWh of heat costs, not of
+    electricity. A cold quarter makes heat dearer (the COP falls), so its price is scaled by the COP at
+    the reference temperature over the COP at the quarter's forecast: the thresholds in c/kWh keep their
+    meaning at `reference_c`. Each interval keeps its spot price in `spot`. Unchanged when [cop] is off
+    or no outdoor temperature is known."""
+    cop = optional(cfg, "cop")
+    if not cop or not prices or outdoor is None:
+        return prices
+    ref = cop_at(cop, cop["reference_c"])
+    out = []
+    for i in prices:
+        temp = outdoor_temp_at(outdoor, i.start + (i.end - i.start) / 2)
+        scale = 1.0 if temp is None else ref / cop_at(cop, temp)
+        out.append(replace(i, price=i.price * scale, spot=i.price))
+    return out
 
 
 async def fetch_prices(cfg: dict) -> List[PriceInterval]:
@@ -1471,7 +1516,7 @@ def desired_setpoint(
         plan = home_day_floor(plan_decision(now, *plan_args, warm_ups=False), now, cfg, mode, home)
         until = f" until {away.until.astimezone(ZoneInfo(cfg['timezone'])):%a %d.%m. %H:%M}" if away.until else ""
         # Nobody is home, as on a weekday morning: the price sets the floor.
-        final, why = nobody_home_target(price_at(prices, now), plan, cfg)
+        final, why = nobody_home_target(spot_price_at(prices, now), plan, cfg)
         d = Decision(final, 0.0, final, f"away{until}, {why}", plan.rule)
         if nudge:
             # Someone is home after all and cold: the floor lifts away toward the plan, a shift moves it.
@@ -1586,7 +1631,7 @@ def plan_decision(now: datetime, prices: Optional[List[PriceInterval]], cfg: dic
     base = base_setpoint(local, cfg, holiday or home) if heating else cfg["cool"]["temp"]
     energy, reason, extreme, rule, cheapest_kept = price_shift_at(
         now, prices, cfg, factor_for(outdoor_mean, cfg, mode), mode)
-    where = situation(local, price_at(prices, now), base, cfg, holiday or home, unit) if heating else COOLING
+    where = situation(local, spot_price_at(prices, now), base, cfg, holiday or home, unit) if heating else COOLING
     rules_on = REGIME_RULES[where.regime]
     cap = where.cap
     if cap is not None and rule == "spike":
@@ -1668,7 +1713,7 @@ def plan_decision(now: datetime, prices: Optional[List[PriceInterval]], cfg: dic
         reason += f", night floor {night_min:g}"
     d = Decision(base, offset, final, reason, rule, extreme)
     if where.regime == "nobody_home":
-        d.final, d.reason = nobody_home_target(price_at(prices, now), d, cfg)
+        d.final, d.reason = nobody_home_target(spot_price_at(prices, now), d, cfg)
     if heating and warm_ups and not absent and rule != "peak":
         # Warm up for the people arriving (a peak keeps its cut): the plan before and at the arrival,
         # without the room, so the warm-up's length does not swing with each reading.
@@ -1797,7 +1842,9 @@ def plan_rows(now: datetime, prices: Optional[List[PriceInterval]], cfg: dict,
             switch_at(home, home_until, t), active)
         out = outdoor_temp_at(outdoor_mean, t)
         code, is_day = outdoor_mean.code_at(t) if isinstance(outdoor_mean, OutdoorForecast) else (None, None)
-        rows.append({"start": t.astimezone(tz), "price": price_at(prices, t), "base": base,
+        heat = price_at(prices, t)
+        rows.append({"start": t.astimezone(tz), "price": spot_price_at(prices, t), "base": base,
+                     "heat_price": None if heat is None or not optional(cfg, "cop") else round(heat, 2),
                      "outdoor": None if out is None else round(out, 1),
                      "weather_code": code, "is_day": is_day,
                      "offset": offset, "final": final, "reason": reason, "kind": reason_kind(reason)})
@@ -2161,7 +2208,7 @@ async def apply_to_units(
                 "old_target": current, "new_target": final, "base": base,
                 "offset": round(offset, 2) if offset != "" else "",
                 "outdoor_mean": day_outdoor, "reason": reason,
-                "price": "" if (p := price_at(prices, now)) is None else round(p, 3),
+                "price": "" if (p := spot_price_at(prices, now)) is None else round(p, 3),
                 "kind": reason_kind(reason) if reason else ""})
         except Exception:
             log.exception("%s: could not write history", device.name)
@@ -3193,6 +3240,7 @@ async def run(args) -> int:
         now = parse_now(args.now, tz)
         prices = await get_prices_or_none(cfg, args.prices_file)
         outdoor = await get_outdoor_or_none(cfg, now, args.outdoor_temp)
+        prices = heat_prices(prices, outdoor, cfg)
         sun = await get_sun_or_none(cfg, args.sun)
         show = plan_json if args.plan_json else plan_table
         # HOME, HOLIDAY and the nudge as they stand now (tomorrow's plan runs with `now` at tomorrow
@@ -3289,6 +3337,7 @@ async def run_live(args, cfg: dict, tz: ZoneInfo) -> int:
     if not args.prices_file:  # a test file must not pollute the real history
         record_prices(APP_DIR / cfg["price_history_file"], prices)
     outdoor = await get_outdoor_or_none(cfg, now, args.outdoor_temp)
+    prices = heat_prices(prices, outdoor, cfg)   # after record_prices: the history keeps the spot price
     sun = await get_sun_or_none(cfg, args.sun)
 
     import aiohttp

@@ -185,7 +185,7 @@
     <div class="label">{{price_now}}</div>
     <div class="hero">
       <div><div class="price"><span id="priceNow">–</span><small>c/kWh</small></div>
-        <div class="avg" id="avgNow"></div></div>
+        <div class="avg" id="avgNow"></div><div class="avg" id="heatNow" hidden></div></div>
       <div class="target"><span class="chip" id="userChip" hidden>{{manual_chip}}</span><span class="pill" id="pill"></span><div class="out">{{outside}} <span id="outSym" class="sym"></span> <b id="outNow">–</b></div></div>
       <div class="why" id="whyText"></div>
       <div class="notes" id="whyNotes"></div>
@@ -401,6 +401,9 @@ function renderPrice(p) {
   const avg = p && p.has_prices ? p.avg : null;               // the day's average, smaller, under the price
   $("avgNow").replaceChildren();
   if (avg != null) $("avgNow").append(T.average + " ", Object.assign(document.createElement("b"), {textContent: fmt(avg.toFixed(1))}), " c");
+  const heat = n && n.heat_price != null ? n.heat_price : null;   // [cop] on: the rules' price of heat
+  $("heatNow").hidden = heat == null;
+  if (heat != null) $("heatNow").textContent = fill(T.heat_price, {value: fmt(heat.toFixed(1))});
   const pill = $("pill");
   pill.textContent = n ? n.pill : ""; pill.className = "pill " + (n ? n.kind : ""); pill.hidden = !n;
   $("whyText").textContent = n ? n.reason.text + " · " + fmt(n.target) + " °C" : T.no_plan;

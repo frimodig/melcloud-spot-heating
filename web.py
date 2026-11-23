@@ -586,7 +586,8 @@ def summarise_plan(raw: dict, cfg: Optional[dict] = None, at_home: bool = False)
                                      home_hours(cfg, rows[0]["start"][:10], at_home)),
         "rows": rows,   # for the override estimates; status() removes them
         "now": None if now_row is None else {
-            "price": now_row["price"], "target": now_row["final"], "kind": now_row["kind"],
+            "price": now_row["price"], "heat_price": now_row.get("heat_price"),
+            "target": now_row["final"], "kind": now_row["kind"],
             "outdoor": now_row.get("outdoor"), "weather": now_row.get("weather_code"),
             "is_day": now_row.get("is_day"),
             "reason_log": now_row["reason"],

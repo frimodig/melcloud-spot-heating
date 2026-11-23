@@ -42,6 +42,19 @@ tiers = [[10.0, 0.0], [20.0, 0.5], [50.0, 1.0]]
 enabled = true
 hours = 1.0
 
+# The price of heat, not of electricity. When enabled, the price rules (cheap, dear, peak, spikes, the
+# shifts) judge each quarter's spot price scaled by the heat pump's COP at the reference temperature
+# over its COP at that quarter's forecast outdoor temperature: a cold quarter makes heat dearer, so
+# its price counts for more. The thresholds in c/kWh keep their meaning at `reference_c`. Needs the
+# weather forecast; without it the spot price is used. The page, history and reports keep the spot
+# price. `points` are [outdoor C, COP] pairs, held flat beyond the ends. These are one pump's, from
+# its data book (Mitsubishi Electric MXZ-2F53VFH4, full load, 20 C indoors, wet bulb read as dry bulb
+# less 1 C): replace them with yours, or leave this off.
+[cop]
+enabled = false
+reference_c = 0.0
+points = [[-15.0, 3.5], [-7.0, 3.6], [1.0, 3.8], [7.0, 4.1], [13.0, 4.4]]
+
 # A single quarter hour well above the quarters around it is cut a little, even in comfort hours
 # and at low prices: at least min_jump c/kWh and min_ratio over the median of the `neighbours`
 # quarters on each side.
