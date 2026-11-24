@@ -60,7 +60,8 @@
   .price small { font-size: 1rem; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 2px; }
   .target { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
   .cheap3 { margin-top: 10px; font-weight: 600; } .cheap3:empty { display: none; }
-  .heatbox { margin-top: 14px; font-weight: 600; padding: 10px 14px; border-radius: 14px; background: var(--tonal); font-variant-numeric: tabular-nums; }
+  .heatbox { margin-top: 14px; padding: 10px 14px; border-radius: 14px; background: var(--tonal); font-size: .9rem; font-variant-numeric: tabular-nums; }
+  .heatbox b { font-weight: 600; } .heatbox span { color: var(--muted); white-space: nowrap; }
   .avg { color: var(--muted); font-size: .9rem; margin-top: 6px; } .avg b { color: var(--ink); font-variant-numeric: tabular-nums; }
   .sym { font-size: 1.15rem; vertical-align: -2px; }
   .out { color: var(--muted); font-size: .9rem; margin-top: 6px; } .out b { color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -405,9 +406,13 @@ function renderPrice(p) {
   if (avg != null) $("avgNow").append(T.average + " ", Object.assign(document.createElement("b"), {textContent: fmt(avg.toFixed(1))}), " c");
   const heat = n && n.heat_price != null ? n.heat_price : null;   // [cop] or [cool.cop] on: what the rules judge
   $("heatNow").hidden = heat == null;
-  if (heat != null)   // spot × the outdoor temperature's factor
-    $("heatNow").textContent = fill(p.mode === "cool" ? T.cool_price_calc : T.heat_price_calc,
+  if (heat != null) {   // spot × the outdoor temperature's factor; the bracket wraps as one piece
+    const line = fill(p.mode === "cool" ? T.cool_price_calc : T.heat_price_calc,
       {value: fmt(heat.toFixed(1)), spot: fmt(n.price.toFixed(1)), factor: fmt(n.heat_factor.toFixed(2))});
+    const cut = line.indexOf(" (");
+    $("heatNow").replaceChildren(Object.assign(document.createElement("b"), {textContent: cut < 0 ? line : line.slice(0, cut)}),
+      ...(cut < 0 ? [] : [" ", Object.assign(document.createElement("span"), {textContent: line.slice(cut + 1)})]));
+  }
   const pill = $("pill");
   pill.textContent = n ? n.pill : ""; pill.className = "pill " + (n ? n.kind : ""); pill.hidden = !n;
   $("whyText").textContent = n ? n.reason.text + " · " + fmt(n.target) + " °C" : T.no_plan;

@@ -1,8 +1,8 @@
 """Mock screenshot of the phone page for the docs, captured by headless Firefox at phone width. All of it
 is made up, and none of this install's own data is read (control files, history, config.local.toml):
 the test house (tests/house.toml), two days of prices from sample_prices.json, an invented November
-forecast, history and room readings for the day so far in which the units followed the plan, and a
-"Too cold" press 35 minutes ago.
+forecast, history and room readings for the day so far in which the units followed the plan, a
+"Too cold" press 35 minutes ago, and the price of heat ([cop]) on, so the page shows its box.
 
     .venv/bin/python scripts/phone-screenshot.py [docs/phone-page.png]
 
@@ -50,7 +50,9 @@ def house(tmp: Path) -> dict:
     for old, new in UNITS.items():
         text = text.replace(old, new)
     local.write_text(text, encoding="utf-8")
-    return o.load_config(ROOT / "config.toml", local)
+    cfg = o.load_config(ROOT / "config.toml", local)
+    cfg["cop"] = {**cfg["cop"], "enabled": True}
+    return cfg
 
 
 def forecast() -> "o.OutdoorForecast":
@@ -103,6 +105,7 @@ def mock_page(tmp: Path) -> str:
     cfg = house(tmp)
     prices = o.parse_prices(json.loads((ROOT / "sample_prices.json").read_text(encoding="utf-8")))
     outdoor = forecast()
+    prices = o.heat_prices(prices, outdoor, cfg)
     o.set_nudge("warmer", TZ, cfg, PRESSED)
     today = plan(cfg, NOW, prices, outdoor)
     morning(cfg, app_dir, today["rows"], today["now_index"])
