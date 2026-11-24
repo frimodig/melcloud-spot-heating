@@ -67,7 +67,10 @@ instead of a kWh of electricity: the spot price times the COP at 0 C over the CO
 outdoor temperature, a factor between 0.86 and 1.08 with the default points. It moves which quarters
 count as cheap or dear, and nothing else: the comfort windows' tiers, the nobody-home floors and the
 limits stay on the spot price and the room guard on the room. See
-[configuration](configuration.md#the-price-of-heat-cop). Cooling stays on the spot price.
+[configuration](configuration.md#the-price-of-heat-cop). Cooling has its own, `[cool.cop]`: the spot
+price times the lift at the forecast outdoor temperature over the lift at 28 C, so a hot afternoon
+counts as dearer and a cool night as nearly free
+([configuration](configuration.md#the-price-of-cooling-coolcop)).
 
 ## While people are home
 

@@ -57,11 +57,31 @@ def test_nothing_changes_when_off_or_without_weather():
     assert o.heat_prices(None, -7.0, ON) is None
 
 
-def test_cooling_judges_the_spot_price_and_the_page_shows_no_heat_price():
+def test_cooling_without_cool_cop_judges_the_spot_price_and_the_page_shows_no_price_of_cooling():
     prices, hot = day_prices(), forecast(lambda h: 28.0)
     assert o.heat_prices(prices, 28.0, ON, "cool") is prices     # [cop] is a heating curve
     rows = json.loads(o.plan_json(NOON, o.heat_prices(prices, hot, ON, "cool"), ON, hot, None, "cool"))["rows"]
     assert all(r["heat_price"] is None and r["heat_factor"] is None for r in rows)
+
+
+COOL = {**CFG, "cool": {**CFG["cool"], "cop": {**CFG["cool"]["cop"], "enabled": True}}}
+
+
+def test_cooling_is_dearer_the_hotter_it_is_outside_and_nearly_free_when_it_is_cooler_than_the_room():
+    c, target = COOL["cool"]["cop"], COOL["cool"]["temp"]
+    f = lambda t: o.price_factor(COOL, "cool", t)
+    assert f(c["reference_c"]) == pytest.approx(1.0)
+    assert f(35.0) == pytest.approx((35.0 - target + c["approach_k"]) / (c["reference_c"] - target + c["approach_k"]))
+    assert f(35.0) > 1.0 > f(23.0) > f(10.0) > f(5.0) == f(-5.0)   # held at min_lift_k when cool outside
+    assert f(5.0) == pytest.approx(c["min_lift_k"] / (c["reference_c"] - target + c["approach_k"]))
+    assert o.price_factor(CFG, "cool", 35.0) is None and o.price_factor(COOL, "heat", 35.0) is None
+
+
+def test_the_plan_shows_the_price_of_cooling_with_its_factor():
+    hot = forecast(lambda h: 33.0)
+    rows = json.loads(o.plan_json(NOON, o.heat_prices(day_prices(), hot, COOL, "cool"), COOL, hot, None, "cool"))["rows"]
+    r = rows[48]
+    assert r["price"] == 8.0 and r["heat_factor"] > 1.0 and r["heat_price"] == pytest.approx(8.0 * r["heat_factor"], abs=0.05)
 
 
 def test_the_plan_shows_the_spot_price_and_the_heat_price_beside_it():

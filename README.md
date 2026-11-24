@@ -10,8 +10,9 @@ prices, and comes with a small phone page for "too cold", "away" and the like.
 - **Price rules:** cheap quarters are boosted, dear ones cut, peaks cut hard and pre-heated for; the
   heat for a warm-up is bought in the cheapest quarters before people arrive.
 - **Price of heat (optional):** a cold quarter makes heat dearer, so with a COP curve for your pump
-  the rules can judge the price of a kWh of heat instead of electricity; the comfort and minimum rules
-  stay on the spot price.
+  the rules can judge the price of a kWh of heat instead of electricity, and in summer the price of
+  cooling, which falls when it is cooler outside than the room; the comfort and minimum rules stay on
+  the spot price.
 - **Comfort first:** comfort windows cap the cuts, each room's own temperature has the last word,
   and "too cold" or "too hot" on the phone moves the plan for a few hours.
 - **Fits the house:** one unit, several, or a multi-split; your schedule, windows and rules in one

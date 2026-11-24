@@ -403,10 +403,10 @@ function renderPrice(p) {
   const avg = p && p.has_prices ? p.avg : null;               // the day's average, smaller, under the price
   $("avgNow").replaceChildren();
   if (avg != null) $("avgNow").append(T.average + " ", Object.assign(document.createElement("b"), {textContent: fmt(avg.toFixed(1))}), " c");
-  const heat = n && n.heat_price != null ? n.heat_price : null;   // [cop] on: what the rules judge
+  const heat = n && n.heat_price != null ? n.heat_price : null;   // [cop] or [cool.cop] on: what the rules judge
   $("heatNow").hidden = heat == null;
   if (heat != null)   // spot × the outdoor temperature's factor
-    $("heatNow").textContent = fill(T.heat_price_calc,
+    $("heatNow").textContent = fill(p.mode === "cool" ? T.cool_price_calc : T.heat_price_calc,
       {value: fmt(heat.toFixed(1)), spot: fmt(n.price.toFixed(1)), factor: fmt(n.heat_factor.toFixed(2))});
   const pill = $("pill");
   pill.textContent = n ? n.pill : ""; pill.className = "pill " + (n ? n.kind : ""); pill.hidden = !n;

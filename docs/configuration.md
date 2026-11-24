@@ -132,15 +132,46 @@ default points:
 
 So a spot price of 10 c counts as 10.8 c at -15 C and as 8.6 c at 13 C. The defaults are one pump's (the
 Mitsubishi Electric MXZ-2F53VFH4, below): replace them with your pump's, or leave `[cop]` off. Without the
-weather forecast the spot price is used. Cooling always uses the spot price: the points are a heating curve, and
-when cooling the COP falls as it gets warmer, the other way round.
+weather forecast the spot price is used. The points are a heating curve: cooling has its own
+section, `[cool.cop]`, below.
 
 The page shows the result under the price as `Price of heat = 10.8 c (spot 10.0 × 1.08)`: the heat price,
-then the spot price and the factor it was multiplied by. The line is not shown when cooling.
+then the spot price and the factor it was multiplied by.
 
 The minimum and comfort rules are not touched: the comfort windows' tiers, the nobody-home floors, the
 limits and the room guard never look at the COP, so the COP changes when heat is bought, not how
 warm the rooms may get. The page, the history file and the reports keep the spot price.
+
+### The price of cooling (`[cool.cop]`)
+
+Off by default, and separate from `[cop]`. With `[cool.cop] enabled = true` the cooling rules judge what
+a kWh of cooling costs. When cooling, the pump moves heat from the room out to the outdoor air, and the
+warmer it is outside than the room, the harder that is. The factor comes from the pump's lift, the
+temperature difference it works against:
+
+    lift          = outdoor - [cool] temp + approach_k, but at least min_lift_k
+    factor        = lift now / lift at reference_c
+    cooling price = spot price × factor
+
+`[cool] temp` is the cooling target (default 23 C). `approach_k` (default 20 K) adds the two heat exchangers'
+temperature differences: the indoor coil runs colder than the room and the outdoor coil hotter than the
+outdoor air. A pump's EER stays a roughly steady share of the Carnot limit, T_cold / lift, and T_cold
+(the indoor coil) hardly moves, so the EER at the reference over the EER now is the lift now over the
+lift at the reference. `min_lift_k` (default 5 K) keeps the factor above zero: when it is cooler outside
+than the target, cooling is nearly free but not quite, since the compressor and fans still run.
+
+With the defaults (reference 28 C):
+
+| Outdoor | 8 C or cooler | 15 C | 20 C | 23 C | 28 C | 32 C | 35 C |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Lift | 5 K | 12 K | 17 K | 20 K | 25 K | 29 K | 32 K |
+| Factor | 0.20 | 0.48 | 0.68 | 0.80 | 1.00 | 1.16 | 1.28 |
+
+So a spot price of 5 c counts as 6.4 c on a 35 C afternoon and as 2.4 c on a 15 C night, which makes
+pre-cooling in the cool hours attractive. The page shows `Price of cooling = 6.4 c (spot 5.0 × 1.28)`.
+The `[cool.prices]` thresholds keep their meaning at 28 C. These are textbook values, not one pump's:
+the factor between 20 C and 35 C (0.53) is close to how much a typical air-to-air unit's EER changes over
+that range. The comfort tiers, floors and limits stay on the spot price here too.
 
 Sources: the points come from Mitsubishi Electric's technical manual OBH790P (the MXZ-2F53VF4/VFH4
 heating capacity and total input correction curves, p. 123, and the rated COP 4.10 at 7 C outdoor, p. 122),

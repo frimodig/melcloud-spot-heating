@@ -23,6 +23,7 @@ EN = {
     # the page: fixed text
     "price_now": "Electricity price now", "manual_chip": "Manual", "outside": "Outside",
     "heat_price_calc": "Price of heat = {value} c (spot {spot} × {factor})",
+    "cool_price_calc": "Price of cooling = {value} c (spot {spot} × {factor})",
     "overrides_title": "Manual settings active",
     "too_cold_sub": "+{nudge_step} °C, {nudge_hours} h", "too_hot_sub": "−{nudge_step} °C, {nudge_hours} h",
     "too_cold": "Too cold", "too_hot": "Too hot", "away": "Away", "home": "Home", "season": "Season",
@@ -141,6 +142,7 @@ FI = {
 
     "price_now": "Sähkön hinta nyt", "manual_chip": "Käsisäätö", "outside": "Ulkona",
     "heat_price_calc": "Lämmön hinta = {value} c (spot {spot} × {factor})",
+    "cool_price_calc": "Viilennyksen hinta = {value} c (spot {spot} × {factor})",
     "overrides_title": "Käyttäjän ohjaus voimassa",
     "too_cold_sub": "+{nudge_step} °C, {nudge_hours} h", "too_hot_sub": "−{nudge_step} °C, {nudge_hours} h",
     "too_cold": "Liian kylmä", "too_hot": "Liian kuuma", "away": "Poissa", "home": "Kotona", "season": "Kausi",

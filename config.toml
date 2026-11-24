@@ -381,6 +381,18 @@ preheat_boost = 1.5         # ... by this much (floor: extreme_min_temp)
 enabled = true
 scale = [[15.0, 0.5], [25.0, 1.5]]
 
+# The price of cooling, not of electricity: [cop] for the summer, off by default. Cooling gets dearer
+# the warmer it is outside than the room's target ([cool] temp), so each quarter's spot price is
+# multiplied by the pump's lift at its forecast outdoor temperature over the lift at `reference_c`.
+# The lift is outdoor - [cool] temp + approach_k (the indoor and outdoor heat exchangers' temperature
+# differences together), never under min_lift_k: when it is cooler outside than the target, cooling
+# is nearly free. The EER is a steady share of the Carnot limit, which falls as the lift rises.
+[cool.cop]
+enabled = false
+reference_c = 28.0
+approach_k = 20.0
+min_lift_k = 5.0
+
 # Price drift is ignored in a room warmer than room_max; pre-cooling in one cooler than room_min.
 [cool.comfort]
 room_min = 21.5

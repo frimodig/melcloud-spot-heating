@@ -465,22 +465,35 @@ def cop_at(cop: dict, temp: float) -> float:
     return pts[-1][1]
 
 
+def cool_lift(cop: dict, cfg: dict, outdoor_c: float) -> float:
+    """The temperature lift (K) a cooling pump works against: from the evaporator, below the room's
+    cooling target ([cool] temp), to the condenser, above the outdoor air. `approach_k` is the two heat
+    exchangers' differences together; the lift never falls below `min_lift_k`, however cool it is outside."""
+    return max(cop["min_lift_k"], outdoor_c - cfg["cool"]["temp"] + cop["approach_k"])
+
+
 def price_factor(cfg: dict, mode: str, outdoor_c: float) -> Optional[float]:
-    """What a kWh of heat costs over what it costs at the reference temperature, for one outdoor
-    temperature: the COP at `reference_c` over the COP at `outdoor_c`, from the [cop] points. None when
-    [cop] is off or the season is cooling: the points are a heating curve, and a cooling COP falls as it
-    gets warmer, the other way round."""
-    cop = optional(cfg, "cop") if mode == "heat" else None
-    return cop and cop_at(cop, cop["reference_c"]) / cop_at(cop, outdoor_c)
+    """What a kWh of heat (or of cooling) costs over what it costs at the reference temperature, for one
+    outdoor temperature; None when that mode's [cop] is off.
+    Heating: the COP at `reference_c` over the COP at `outdoor_c`, from the [cop] points.
+    Cooling: the lift at `outdoor_c` over the lift at `reference_c` ([cool.cop]). A pump's EER is a
+    steady share of the Carnot limit, T_cold / lift, and T_cold (the evaporator) stays put, so the
+    EER at the reference over the EER now is the lift now over the lift at the reference."""
+    if mode == "heat":
+        cop = optional(cfg, "cop")
+        return cop and cop_at(cop, cop["reference_c"]) / cop_at(cop, outdoor_c)
+    cop = optional(cfg.get("cool", {}), "cop")
+    return cop and cool_lift(cop, cfg, outdoor_c) / cool_lift(cop, cfg, cop["reference_c"])
 
 
 def heat_prices(prices: Optional[List[PriceInterval]], outdoor, cfg: dict,
                 mode: str = "heat") -> Optional[List[PriceInterval]]:
-    """The prices as the rules should judge them when [cop] is on: what a kWh of heat costs, not a kWh
-    of electricity. Each quarter's spot price is multiplied by price_factor at its forecast outdoor
-    temperature, so a cold quarter makes heat dearer. The thresholds in c/kWh keep their meaning at
-    `reference_c`, where the factor is 1. Each interval keeps its spot price in `spot` and the factor in
-    `factor`. Unchanged when [cop] is off, the season is cooling or no outdoor temperature is known."""
+    """The prices as the rules should judge them when the mode's [cop] is on: what a kWh of heat (or of
+    cooling) costs, not a kWh of electricity. Each quarter's spot price is multiplied by price_factor at
+    its forecast outdoor temperature: a cold quarter makes heat dearer, a hot one cooling. The thresholds
+    in c/kWh keep their meaning at `reference_c`, where the factor is 1. Each interval keeps its spot
+    price in `spot` and the factor in `factor`. Unchanged when the mode's [cop] is off or no outdoor
+    temperature is known."""
     if not prices or outdoor is None or price_factor(cfg, mode, 0.0) is None:
         return prices
     out = []
