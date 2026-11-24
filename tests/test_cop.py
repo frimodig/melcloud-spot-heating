@@ -57,6 +57,13 @@ def test_nothing_changes_when_off_or_without_weather():
     assert o.heat_prices(None, -7.0, ON) is None
 
 
+def test_cooling_judges_the_spot_price_and_the_page_shows_no_heat_price():
+    prices, hot = day_prices(), forecast(lambda h: 28.0)
+    assert o.heat_prices(prices, 28.0, ON, "cool") is prices     # [cop] is a heating curve
+    rows = json.loads(o.plan_json(NOON, o.heat_prices(prices, hot, ON, "cool"), ON, hot, None, "cool"))["rows"]
+    assert all(r["heat_price"] is None and r["heat_factor"] is None for r in rows)
+
+
 def test_the_plan_shows_the_spot_price_and_the_heat_price_beside_it():
     cold = forecast(lambda h: -8.0)
     heat = o.heat_prices(day_prices(), cold, ON)
@@ -64,6 +71,14 @@ def test_the_plan_shows_the_spot_price_and_the_heat_price_beside_it():
     assert {r["price"] for r in rows} == {8.0} and all(r["heat_price"] > 8.0 for r in rows)
     off = json.loads(o.plan_json(NOON, day_prices(), CFG, cold, None))["rows"]
     assert all(r["heat_price"] is None for r in off)
+
+
+def test_the_plan_row_carries_the_factor_of_the_heat_price():
+    cold = forecast(lambda h: -8.0)
+    r = json.loads(o.plan_json(NOON, o.heat_prices(day_prices(), cold, ON), ON, cold, None))["rows"][48]
+    assert r["heat_factor"] == pytest.approx(o.cop_at(COP, 0) / o.cop_at(COP, -8.0), abs=0.01)
+    assert r["heat_price"] == pytest.approx(r["price"] * r["heat_factor"], abs=0.05)
+    assert all(r["heat_factor"] is None for r in json.loads(o.plan_json(NOON, day_prices(), CFG, cold, None))["rows"])
 
 
 def test_the_cold_hours_lose_a_cheap_quarters_boost_that_the_warm_ones_keep():

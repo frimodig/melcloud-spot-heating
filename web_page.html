@@ -60,6 +60,7 @@
   .price small { font-size: 1rem; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 2px; }
   .target { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
   .cheap3 { margin-top: 10px; font-weight: 600; } .cheap3:empty { display: none; }
+  .heatbox { margin-top: 14px; font-weight: 600; padding: 10px 14px; border-radius: 14px; background: var(--tonal); font-variant-numeric: tabular-nums; }
   .avg { color: var(--muted); font-size: .9rem; margin-top: 6px; } .avg b { color: var(--ink); font-variant-numeric: tabular-nums; }
   .sym { font-size: 1.15rem; vertical-align: -2px; }
   .out { color: var(--muted); font-size: .9rem; margin-top: 6px; } .out b { color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -185,11 +186,12 @@
     <div class="label">{{price_now}}</div>
     <div class="hero">
       <div><div class="price"><span id="priceNow">–</span><small>c/kWh</small></div>
-        <div class="avg" id="avgNow"></div><div class="avg" id="heatNow" hidden></div></div>
+        <div class="avg" id="avgNow"></div></div>
       <div class="target"><span class="chip" id="userChip" hidden>{{manual_chip}}</span><span class="pill" id="pill"></span><div class="out">{{outside}} <span id="outSym" class="sym"></span> <b id="outNow">–</b></div></div>
       <div class="why" id="whyText"></div>
       <div class="notes" id="whyNotes"></div>
     </div>
+    <div class="heatbox" id="heatNow" hidden></div>
   </section>
 
   <section class="units" id="units"></section>
@@ -401,9 +403,11 @@ function renderPrice(p) {
   const avg = p && p.has_prices ? p.avg : null;               // the day's average, smaller, under the price
   $("avgNow").replaceChildren();
   if (avg != null) $("avgNow").append(T.average + " ", Object.assign(document.createElement("b"), {textContent: fmt(avg.toFixed(1))}), " c");
-  const heat = n && n.heat_price != null ? n.heat_price : null;   // [cop] on: the rules' price of heat
+  const heat = n && n.heat_price != null ? n.heat_price : null;   // [cop] on: what the rules judge
   $("heatNow").hidden = heat == null;
-  if (heat != null) $("heatNow").textContent = fill(T.heat_price, {value: fmt(heat.toFixed(1))});
+  if (heat != null)   // spot × the outdoor temperature's factor
+    $("heatNow").textContent = fill(T.heat_price_calc,
+      {value: fmt(heat.toFixed(1)), spot: fmt(n.price.toFixed(1)), factor: fmt(n.heat_factor.toFixed(2))});
   const pill = $("pill");
   pill.textContent = n ? n.pill : ""; pill.className = "pill " + (n ? n.kind : ""); pill.hidden = !n;
   $("whyText").textContent = n ? n.reason.text + " · " + fmt(n.target) + " °C" : T.no_plan;

@@ -342,6 +342,15 @@ def price_at(prices: Optional[List["PriceInterval"]], now: datetime) -> Optional
     return None
 
 
+def factor_at(prices: Optional[List["PriceInterval"]], now: datetime) -> Optional[float]:
+    """The factor heat_prices applied at `now`, or None when the price is the spot price."""
+    now_utc = now.astimezone(timezone.utc)
+    for i in prices or []:
+        if i.start <= now_utc < i.end:
+            return i.factor
+    return None
+
+
 def spot_price_at(prices: Optional[List["PriceInterval"]], now: datetime) -> Optional[float]:
     """The spot price at `now`, as billed: for the page, the history file and the reports."""
     now_utc = now.astimezone(timezone.utc)
@@ -361,6 +370,7 @@ class PriceInterval:
     end: datetime
     price: float  # c/kWh; what the rules judge: the spot price, or the heat price when [cop] is on
     spot: Optional[float] = None  # the spot price when `price` was changed by heat_prices
+    factor: Optional[float] = None  # what heat_prices multiplied the spot price by
 
     @property
     def spot_price(self) -> float:
@@ -455,21 +465,32 @@ def cop_at(cop: dict, temp: float) -> float:
     return pts[-1][1]
 
 
-def heat_prices(prices: Optional[List[PriceInterval]], outdoor, cfg: dict) -> Optional[List[PriceInterval]]:
-    """The prices as the rules should judge them when [cop] is on: what a kWh of heat costs, not of
-    electricity. A cold quarter makes heat dearer (the COP falls), so its price is scaled by the COP at
-    the reference temperature over the COP at the quarter's forecast: the thresholds in c/kWh keep their
-    meaning at `reference_c`. Each interval keeps its spot price in `spot`. Unchanged when [cop] is off
-    or no outdoor temperature is known."""
-    cop = optional(cfg, "cop")
-    if not cop or not prices or outdoor is None:
+def price_factor(cfg: dict, mode: str, outdoor_c: float) -> Optional[float]:
+    """What a kWh of heat costs over what it costs at the reference temperature, for one outdoor
+    temperature: the COP at `reference_c` over the COP at `outdoor_c`, from the [cop] points. None when
+    [cop] is off or the season is cooling: the points are a heating curve, and a cooling COP falls as it
+    gets warmer, the other way round."""
+    cop = optional(cfg, "cop") if mode == "heat" else None
+    return cop and cop_at(cop, cop["reference_c"]) / cop_at(cop, outdoor_c)
+
+
+def heat_prices(prices: Optional[List[PriceInterval]], outdoor, cfg: dict,
+                mode: str = "heat") -> Optional[List[PriceInterval]]:
+    """The prices as the rules should judge them when [cop] is on: what a kWh of heat costs, not a kWh
+    of electricity. Each quarter's spot price is multiplied by price_factor at its forecast outdoor
+    temperature, so a cold quarter makes heat dearer. The thresholds in c/kWh keep their meaning at
+    `reference_c`, where the factor is 1. Each interval keeps its spot price in `spot` and the factor in
+    `factor`. Unchanged when [cop] is off, the season is cooling or no outdoor temperature is known."""
+    if not prices or outdoor is None or price_factor(cfg, mode, 0.0) is None:
         return prices
-    ref = cop_at(cop, cop["reference_c"])
     out = []
     for i in prices:
         temp = outdoor_temp_at(outdoor, i.start + (i.end - i.start) / 2)
-        scale = 1.0 if temp is None else ref / cop_at(cop, temp)
-        out.append(replace(i, price=i.price * scale, spot=i.price))
+        if temp is None:
+            out.append(i)
+            continue
+        f = price_factor(cfg, mode, temp)
+        out.append(replace(i, price=i.price * f, spot=i.price, factor=f))
     return out
 
 
@@ -1842,9 +1863,10 @@ def plan_rows(now: datetime, prices: Optional[List[PriceInterval]], cfg: dict,
             switch_at(home, home_until, t), active)
         out = outdoor_temp_at(outdoor_mean, t)
         code, is_day = outdoor_mean.code_at(t) if isinstance(outdoor_mean, OutdoorForecast) else (None, None)
-        heat = price_at(prices, t)
+        factor = factor_at(prices, t)   # set only when heat_prices changed the price
         rows.append({"start": t.astimezone(tz), "price": spot_price_at(prices, t), "base": base,
-                     "heat_price": None if heat is None or not optional(cfg, "cop") else round(heat, 2),
+                     "heat_price": None if factor is None else round(price_at(prices, t), 2),
+                     "heat_factor": None if factor is None else round(factor, 2),
                      "outdoor": None if out is None else round(out, 1),
                      "weather_code": code, "is_day": is_day,
                      "offset": offset, "final": final, "reason": reason, "kind": reason_kind(reason)})
@@ -3240,7 +3262,8 @@ async def run(args) -> int:
         now = parse_now(args.now, tz)
         prices = await get_prices_or_none(cfg, args.prices_file)
         outdoor = await get_outdoor_or_none(cfg, now, args.outdoor_temp)
-        prices = heat_prices(prices, outdoor, cfg)
+        mode = args.mode or read_season(SEASON_FILE)
+        prices = heat_prices(prices, outdoor, cfg, mode)
         sun = await get_sun_or_none(cfg, args.sun)
         show = plan_json if args.plan_json else plan_table
         # HOME, HOLIDAY and the nudge as they stand now (tomorrow's plan runs with `now` at tomorrow
@@ -3250,7 +3273,7 @@ async def run(args) -> int:
         holiday = args.holiday or holiday_active(HOLIDAY_FILE, tz, real_now)
         home_until = read_until_file(HOME_FILE, "HOME", tz)[1]
         holiday_until = read_until_file(HOLIDAY_FILE, "HOLIDAY", tz)[1]
-        print(show(now, prices, cfg, outdoor, away_from(args, tz, real_now), args.mode or read_season(SEASON_FILE),
+        print(show(now, prices, cfg, outdoor, away_from(args, tz, real_now), mode,
                    holiday, sun, home, read_nudge(NUDGE_FILE, tz, real_now),
                    None if args.assume_home else home_until, None if args.holiday else holiday_until))
         return 0
@@ -3337,7 +3360,7 @@ async def run_live(args, cfg: dict, tz: ZoneInfo) -> int:
     if not args.prices_file:  # a test file must not pollute the real history
         record_prices(APP_DIR / cfg["price_history_file"], prices)
     outdoor = await get_outdoor_or_none(cfg, now, args.outdoor_temp)
-    prices = heat_prices(prices, outdoor, cfg)   # after record_prices: the history keeps the spot price
+    prices = heat_prices(prices, outdoor, cfg, season)   # after record_prices: the history keeps the spot price
     sun = await get_sun_or_none(cfg, args.sun)
 
     import aiohttp

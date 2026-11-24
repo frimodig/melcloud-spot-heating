@@ -106,17 +106,41 @@ far lower. The temperatures the rules may reach are settings too: `[limits]` and
 ### The price of heat (`[cop]`)
 
 Off by default. With `[cop] enabled = true` the cheap, dear, spike, above-average, pre-heat and night
-rules judge what a kWh of *heat* costs, not of electricity: each quarter's spot price is multiplied by
-the COP at `reference_c` (default 0 C) and divided by the COP at that quarter's forecast outdoor
-temperature, so cold quarters count as dearer and mild ones as cheaper, and the thresholds above keep
-their meaning at the reference temperature. `points` are `[outdoor C, COP]` pairs, interpolated and held
-flat beyond the ends. The defaults are one pump's (the Mitsubishi Electric MXZ-2F53VFH4, below):
-replace them with your pump's, or leave `[cop]` off. Without the weather forecast the spot price is used.
+rules judge what a kWh of *heat* costs, not a kWh of electricity. A heat pump turns 1 kWh of electricity into
+COP kWh of heat, and the COP falls as it gets colder outside, so the same spot price buys less heat on a cold
+night than on a mild afternoon.
+
+Each quarter's price is the spot price times a factor:
+
+    factor     = COP at reference_c / COP at the quarter's forecast outdoor temperature
+    heat price = spot price × factor
+
+A cold quarter gets a factor above 1 and counts as dearer, a mild one a factor below 1 and counts as cheaper.
+Dividing by the COP alone would give the cost of a kWh of heat (8 c at COP 4 is 2 c), but then every
+threshold in c/kWh would have to be rewritten. Multiplying by the COP at the reference temperature keeps
+the thresholds as they are: at `reference_c` (default 0 C) the factor is 1 and the heat price is the spot
+price. Comparing two quarters gives the same answer either way, since the reference COP is the same for
+both.
+
+`points` are `[outdoor C, COP]` pairs, interpolated between them and held flat beyond the ends. With the
+default points:
+
+| Outdoor | -15 C or colder | -7 C | 0 C | 7 C | 13 C or warmer |
+| --- | --- | --- | --- | --- | --- |
+| COP | 3.50 | 3.60 | 3.77 | 4.10 | 4.40 |
+| Factor | 1.08 | 1.05 | 1.00 | 0.92 | 0.86 |
+
+So a spot price of 10 c counts as 10.8 c at -15 C and as 8.6 c at 13 C. The defaults are one pump's (the
+Mitsubishi Electric MXZ-2F53VFH4, below): replace them with your pump's, or leave `[cop]` off. Without the
+weather forecast the spot price is used. Cooling always uses the spot price: the points are a heating curve, and
+when cooling the COP falls as it gets warmer, the other way round.
+
+The page shows the result under the price as `Price of heat = 10.8 c (spot 10.0 × 1.08)`: the heat price,
+then the spot price and the factor it was multiplied by. The line is not shown when cooling.
 
 The minimum and comfort rules are not touched: the comfort windows' tiers, the nobody-home floors, the
 limits and the room guard never look at the COP, so the COP changes when heat is bought, not how
-warm the rooms may get. The page, the history file and the reports keep the spot price; the page adds
-a "price of heat" line.
+warm the rooms may get. The page, the history file and the reports keep the spot price.
 
 Sources: the points come from Mitsubishi Electric's technical manual OBH790P (the MXZ-2F53VF4/VFH4
 heating capacity and total input correction curves, p. 123, and the rated COP 4.10 at 7 C outdoor, p. 122),
@@ -125,7 +149,7 @@ as dry bulb less 1 C. The idea of a COP that depends on the outdoor temperature 
 open-source tools, which we read for background and copied nothing from:
 [hplib](https://github.com/FZJ-IEK3-VSA/hplib) (a linear regression of the COP on temperatures, fitted to
 Keymark certification data) and the Home Assistant integration
-[heating_curve_optimizer](https://bvweerd.github.io/heating_curve_optimizer/algorithm/cop-calculation/).
+[heating_curve_optimizer](https://github.com/bvweerd/heating_curve_optimizer/blob/dev/docs/algorithm.md).
 
 ## Language and time
 
